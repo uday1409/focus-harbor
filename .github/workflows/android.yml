@@ -73,6 +73,7 @@ jobs:
           profile: pixel_6
           cores: 4
           ram-size: 4096M
+          disk-size: 2048M
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader -feature -Vulkan -no-audio -no-boot-anim -no-snapshot -no-metrics
           script: >-

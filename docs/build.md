@@ -106,8 +106,9 @@ interoperability failures. This changes only the test emulator, not the app or
 a user's device. Failed acceptance runs retain Android window state and system
 events in the emulator-report artifact without hiding the original test failure.
 The emulator job pins Ubuntu 24.04 and uses the API 36 Google APIs image with
-four virtual cores and 4 GB RAM so cold-boot system services have sufficient
-resources. The app itself does not depend on Google Play services.
+four virtual cores, 4 GB RAM, and a bounded 2 GB userdata partition so cold-boot
+services have sufficient resources without exhausting hosted-runner disk space.
+The app itself does not depend on Google Play services.
 
 After authenticating GitHub CLI to the intended personal account, publishing a
 new private repository from a local committed checkout is explicit:
