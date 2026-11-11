@@ -72,12 +72,21 @@ jobs:
           arch: x86_64
           profile: pixel_6
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot
-          script: ./gradlew --no-daemon --console=plain :app:connectedDebugAndroidTest
+          emulator-options: -no-window -gpu swiftshader -feature -Vulkan -no-audio -no-boot-anim -no-snapshot -no-metrics
+          script: >-
+            ./gradlew --no-daemon --console=plain :app:connectedDebugAndroidTest ||
+            { status=$?; mkdir -p app/build/reports/emulator-diagnostics;
+            "$ANDROID_HOME/platform-tools/adb" -s emulator-5554 shell dumpsys window
+            > app/build/reports/emulator-diagnostics/window.txt;
+            "$ANDROID_HOME/platform-tools/adb" -s emulator-5554 logcat -d -b events
+            > app/build/reports/emulator-diagnostics/events.log;
+            exit "$status"; }
       - name: Upload emulator reports
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: android-emulator-reports
-          path: app/build/reports/androidTests/
+          path: |
+            app/build/reports/androidTests/
+            app/build/reports/emulator-diagnostics/
           retention-days: 14
