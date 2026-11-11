@@ -38,8 +38,10 @@ boundary, or system-wide app blocker. Read `specs/focus-mode.md` and
 
 Prerequisites: JDK 17, Android platform 36, Build Tools 35.0.0; set `JAVA_HOME`
 and `ANDROID_HOME`. The checked-in Gradle wrapper pins and verifies Gradle 8.13.
-Version-freshness lint checks remain visible as informational advice; weekly
-Dependabot updates handle upgrades. Correctness/security warnings still fail.
+SDK/dependency-freshness lint checks remain visible as informational advice;
+weekly Dependabot updates handle upgrades. The preview intentionally targets
+tested API 36, even when a runner has a newer SDK installed. Retarget only after
+compatibility review and testing. Correctness/security warnings still fail.
 
 Windows:
 

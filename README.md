@@ -9,6 +9,9 @@ Recents, settings, links, or another app can still reach other apps. Normal
 in-app exit requires your text; OS recovery and uninstall deliberately remain
 possible. It is not a tamper-proof version of OnePlus Zen Space.
 
+**Download:** [Evaluation APK and SHA-256 checksum](https://github.com/uday1409/focus-harbor/releases/tag/v1.0.0-preview).
+This is a private release; sign in to GitHub to access it.
+
 ## Use it
 
 1. Manually install the evaluation APK after reviewing

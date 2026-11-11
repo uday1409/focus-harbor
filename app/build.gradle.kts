@@ -38,10 +38,12 @@ android {
         warningsAsErrors = true
         abortOnError = true
         checkDependencies = true
+        // Freshness advice must not silently retarget the tested API 36 preview.
         informational += setOf(
             "AndroidGradlePluginVersion",
             "GradleDependency",
             "NewerVersionAvailable",
+            "OldTargetApi",
         )
     }
 

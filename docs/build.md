@@ -44,11 +44,13 @@ These are ignored generated files. The APK is debug-signed, debuggable, and
 intended for personal evaluation. A production signing key/release policy has
 not been configured.
 
-The three dependency-freshness checks (`AndroidGradlePluginVersion`,
-`GradleDependency`, `NewerVersionAvailable`) remain enabled as informational
-advice rather than failing a pinned, compatible build whenever a repository
-publishes a new version. Weekly Dependabot updates manage upgrades; no
-correctness/security lint check is disabled and there is no lint baseline.
+The SDK/dependency-freshness checks (`AndroidGradlePluginVersion`,
+`GradleDependency`, `NewerVersionAvailable`, `OldTargetApi`) remain enabled as
+informational advice. This preview intentionally targets tested API 36; a runner
+having SDK 37 installed must not force an untested compatibility change just to
+pass lint. Retargeting requires compatibility review and testing. Weekly
+Dependabot updates manage dependency upgrades; no correctness/security lint check
+is disabled and there is no lint baseline.
 
 The actual Gradle command, also usable on Linux/macOS, is:
 
@@ -87,6 +89,10 @@ Use an emulator for additional force-stop/reboot/Home-role recovery checks.
 Do not claim physical-device or OEM coverage from these tests.
 
 ## GitHub
+
+The built evaluation APK and its checksum are available in the
+[private preview release](https://github.com/uday1409/focus-harbor/releases/tag/v1.0.0-preview).
+Sign in to the repository owner's GitHub account to download private assets.
 
 The workflow builds an APK/checksum artifact and runs API 36 emulator tests
 on pushes to `main` and manual dispatch. Pull requests run the JVM/lint/build
