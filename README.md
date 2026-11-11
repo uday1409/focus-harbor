@@ -10,9 +10,8 @@ Recents, settings, links, or another app can still reach other apps. Normal
 in-app exit follows your pre-session word-challenge choice; OS recovery and uninstall remain
 possible. It is not a tamper-proof version of OnePlus Zen Space.
 
-**Download:** [Last published evaluation APK and SHA-256 checksum (1.1.0)](https://github.com/uday1409/focus-harbor/releases/tag/v1.1.0-preview).
-Version 1.2.0, described below, has been built locally but is not yet published.
-Publishing is awaiting confirmation of the repository's intended visibility.
+**Download:** [Focus Harbor 1.2.0 evaluation APK and SHA-256 checksum](https://github.com/uday1409/focus-harbor/releases/tag/v1.2.0-preview).
+Open the release's **Assets** section to download the debug-signed preview.
 
 ## Use it
 

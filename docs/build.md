@@ -95,11 +95,10 @@ Do not claim physical-device or OEM coverage from these tests.
 
 ## GitHub
 
-The last published evaluation APK and its checksum are available in the
-[1.1.0 preview release](https://github.com/uday1409/focus-harbor/releases/tag/v1.1.0-preview).
-The 1.2.0 APK is built locally in `dist` but has not been uploaded. Publication
-is awaiting the owner's confirmation of the repository's intended visibility;
-do not assume that earlier private-release access still applies.
+The evaluation APK and its checksum are available under **Assets** in the
+[1.2.0 preview release](https://github.com/uday1409/focus-harbor/releases/tag/v1.2.0-preview).
+The release is a debug-signed personal-evaluation build, not a Play Store release.
+Publication uses the existing repository without changing its visibility.
 
 The workflow builds an APK/checksum artifact and runs API 35 emulator tests
 on pushes to `main` and manual dispatch. Pull requests run the JVM/lint/build
