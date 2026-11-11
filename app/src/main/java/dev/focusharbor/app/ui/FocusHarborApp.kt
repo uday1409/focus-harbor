@@ -56,7 +56,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -92,6 +91,9 @@ import dev.focusharbor.app.R
 import dev.focusharbor.app.apps.LaunchableApp
 import dev.focusharbor.app.focus.ExitText
 import dev.focusharbor.app.focus.FocusSession
+import dev.focusharbor.app.focus.FocusStore
+import dev.focusharbor.app.focus.FocusTime
+import dev.focusharbor.app.focus.remainingMillis
 import java.util.Locale
 import kotlinx.coroutines.delay
 
@@ -168,7 +170,9 @@ fun FocusHarborApp(model: FocusViewModel) {
                     CircularProgressIndicator()
                     Text(stringResource(R.string.loading))
                 }
-                active -> FocusScreen(state, model::launchApp, model::refresh)
+                active -> FocusScreen(
+                    state, model::launchApp, model::refresh, requestExit, model::keepGoing, model::currentTime,
+                )
                 else -> SetupScreen(
                     state = state,
                     onChooseHome = chooseHome,
@@ -176,6 +180,12 @@ fun FocusHarborApp(model: FocusViewModel) {
                     onChooseApps = { showPicker = true },
                     onClearSelection = model::clearSelection,
                     onSafetyAccepted = model::setSafetyAccepted,
+                    onPresetSelect = model::selectPreset,
+                    onPresetCreate = model::createPreset,
+                    onPresetRename = model::renamePreset,
+                    onPresetDelete = model::deletePreset,
+                    onIntention = model::setIntention,
+                    onDuration = model::setDuration,
                 )
             }
         }
@@ -208,7 +218,7 @@ fun FocusHarborApp(model: FocusViewModel) {
     if (showPicker && !active && state.session != null && !state.storageError) {
         AppPicker(
             state = state,
-            onDismiss = { showPicker = false },
+            onDismiss = { showPicker = false; model.saveAppSelection() },
             onQuery = model::setQuery,
             onToggle = model::toggleApp,
             onOpen = model::launchApp,
@@ -247,6 +257,12 @@ private fun SetupScreen(
     onChooseApps: () -> Unit,
     onClearSelection: () -> Unit,
     onSafetyAccepted: (Boolean) -> Unit,
+    onPresetSelect: (String) -> Unit,
+    onPresetCreate: (String) -> Unit,
+    onPresetRename: (String) -> Unit,
+    onPresetDelete: () -> Unit,
+    onIntention: (String) -> Unit,
+    onDuration: (Int?) -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.testTag("setup-list"),
@@ -262,6 +278,9 @@ private fun SetupScreen(
                 )
                 SupportingText(stringResource(R.string.setup_description))
             }
+        }
+        item {
+            PresetSection(state, onPresetSelect, onPresetCreate, onPresetRename, onPresetDelete)
         }
         item {
             SectionCard {
@@ -282,6 +301,7 @@ private fun SetupScreen(
                 }
             }
         }
+        item { SessionOptions(state, onIntention, onDuration) }
         item {
             SectionCard {
                 Eyebrow(stringResource(R.string.step_exit))
@@ -380,7 +400,7 @@ private fun SetupScreen(
 }
 
 @Composable
-private fun SectionCard(content: @Composable () -> Unit) {
+internal fun SectionCard(content: @Composable () -> Unit) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         shape = RoundedCornerShape(24.dp),
@@ -393,7 +413,7 @@ private fun SectionCard(content: @Composable () -> Unit) {
 }
 
 @Composable
-private fun Eyebrow(text: String) {
+internal fun Eyebrow(text: String) {
     Text(
         text,
         style = MaterialTheme.typography.labelMedium,
@@ -402,7 +422,7 @@ private fun Eyebrow(text: String) {
 }
 
 @Composable
-private fun SupportingText(text: String) {
+internal fun SupportingText(text: String) {
     Text(
         text,
         style = MaterialTheme.typography.bodyMedium,
@@ -422,6 +442,9 @@ private fun BottomBar(
     val ready = state.session != null && !state.storageError
     val canStart = ready && !state.busy && state.defaultHome && state.catalogLoaded &&
         !state.catalogError && state.safetyAccepted &&
+        state.selectedPresetId != null &&
+        state.draftIntention.trim().length <= FocusStore.MAX_INTENTION_LENGTH &&
+        FocusStore.validDuration(state.draftDurationMinutes) &&
         state.draftAllowed.isNotEmpty() &&
         state.apps.map { it.packageName }.containsAll(state.draftAllowed)
     Surface(tonalElevation = 2.dp) {
@@ -605,9 +628,24 @@ private fun FocusScreen(
     state: FocusUiState,
     onOpen: (LaunchableApp) -> Unit,
     onRetry: () -> Unit,
+    onFinish: () -> Unit,
+    onKeepGoing: (Int?) -> Unit,
+    currentTime: () -> FocusTime,
 ) {
     val session = state.session ?: return
     val allowed = state.apps.filter { it.packageName in session.allowedPackages }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var now by remember { mutableStateOf(currentTime()) }
+    var extending by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(lifecycleOwner) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                now = currentTime()
+                delay(1_000)
+            }
+        }
+    }
+    val remaining = session.remainingMillis(now)
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = 104.dp),
         modifier = Modifier.testTag("focus-apps"),
@@ -615,7 +653,31 @@ private fun FocusScreen(
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        item(span = { GridItemSpan(maxLineSpan) }) { FocusHeader(session) }
+        item(span = { GridItemSpan(maxLineSpan) }) { FocusHeader(session, now, remaining) }
+        if (remaining == 0L) {
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                SectionCard {
+                    Text(
+                        stringResource(R.string.time_reached_title),
+                        style = MaterialTheme.typography.headlineSmall,
+                        modifier = Modifier.testTag("time-reached"),
+                    )
+                    SupportingText(stringResource(R.string.time_reached_description))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(
+                            onClick = onFinish,
+                            enabled = !state.busy,
+                            modifier = Modifier.testTag("time-reached-finish"),
+                        ) { Text(stringResource(R.string.finish)) }
+                        OutlinedButton(
+                            onClick = { extending = true },
+                            enabled = !state.busy,
+                            modifier = Modifier.testTag("keep-going"),
+                        ) { Text(stringResource(R.string.keep_going)) }
+                    }
+                }
+            }
+        }
         item(span = { GridItemSpan(maxLineSpan) }) {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -670,10 +732,18 @@ private fun FocusScreen(
             }
         }
     }
+    if (extending) {
+        DurationDialog(
+            title = stringResource(R.string.keep_going_title),
+            initial = 25,
+            onDismiss = { extending = false },
+            onSelect = { extending = false; onKeepGoing(it) },
+        )
+    }
 }
 
 @Composable
-private fun FocusHeader(session: FocusSession) {
+private fun FocusHeader(session: FocusSession, now: FocusTime, remaining: Long?) {
     val ring = MaterialTheme.colorScheme.outlineVariant
     val fill = MaterialTheme.colorScheme.primaryContainer
     Column(
@@ -683,7 +753,19 @@ private fun FocusHeader(session: FocusSession) {
         Brand()
         Spacer(Modifier.height(6.dp))
         Eyebrow(stringResource(R.string.focus_status))
-        Text(stringResource(R.string.focus_heading), style = MaterialTheme.typography.displaySmall)
+        session.presetName?.let {
+            Text(it, color = MaterialTheme.colorScheme.primary, modifier = Modifier.testTag("session-preset"))
+        }
+        if (session.intention.isNotBlank()) {
+            Eyebrow(stringResource(R.string.your_intention))
+            Text(
+                session.intention,
+                style = MaterialTheme.typography.headlineSmall,
+                modifier = Modifier.fillMaxWidth().testTag("session-intention"),
+            )
+        } else {
+            Text(stringResource(R.string.focus_heading), style = MaterialTheme.typography.displaySmall)
+        }
         SupportingText(stringResource(R.string.focus_description))
         Box(
             modifier = Modifier.fillMaxWidth().height(192.dp),
@@ -702,9 +784,9 @@ private fun FocusHeader(session: FocusSession) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                ElapsedTime(session.startedAtMillis)
+                TimeText(remaining ?: (now.epochMillis - session.startedAtMillis).coerceAtLeast(0))
                 Text(
-                    stringResource(R.string.focus_elapsed),
+                    stringResource(if (remaining == null) R.string.focus_elapsed else R.string.time_remaining),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -714,18 +796,8 @@ private fun FocusHeader(session: FocusSession) {
 }
 
 @Composable
-private fun ElapsedTime(startedAtMillis: Long) {
-    val lifecycleOwner = LocalLifecycleOwner.current
-    var now by remember(startedAtMillis) { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(startedAtMillis, lifecycleOwner) {
-        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            while (true) {
-                now = System.currentTimeMillis()
-                delay(1_000)
-            }
-        }
-    }
-    val seconds = ((now - startedAtMillis) / 1_000).coerceAtLeast(0)
+private fun TimeText(milliseconds: Long) {
+    val seconds = (milliseconds / 1_000).coerceAtLeast(0)
     Text(
         String.format(Locale.ROOT, "%02d:%02d:%02d", seconds / 3_600, seconds / 60 % 60, seconds % 60),
         style = MaterialTheme.typography.headlineSmall,

@@ -17,6 +17,8 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.assertTextEquals
 import androidx.datastore.preferences.core.edit
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
@@ -24,6 +26,11 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.focusharbor.app.focus.FocusStore
+import dev.focusharbor.app.focus.AndroidFocusClock
+import dev.focusharbor.app.focus.FocusPlan
+import dev.focusharbor.app.focus.FocusPreset
+import dev.focusharbor.app.focus.FocusTime
+import dev.focusharbor.app.focus.remainingMillis
 import dev.focusharbor.app.focus.SessionMutation
 import dev.focusharbor.app.focus.focusDataStore
 import kotlinx.coroutines.flow.first
@@ -64,16 +71,23 @@ class FocusFlowTest {
         availablePackages = apps.toSet()
     }
 
-    private fun launchSession(requireExitText: Boolean) {
+    private fun launchSession(
+        requireExitText: Boolean,
+        plan: FocusPlan = FocusPlan(),
+        start: FocusTime = AndroidFocusClock(context).now(),
+    ) {
         runBlocking {
             context.focusDataStore.edit { it.clear() }
+            val store = FocusStore(context.focusDataStore)
+            store.initializePresets(listOf(FocusPreset("work", context.getString(R.string.preset_work))))
             assertEquals(
                 SessionMutation.STARTED,
-                FocusStore(context.focusDataStore).startSession(
+                store.startSession(
                     setOf(allowedPackage),
                     requireExitText,
                     availablePackages,
-                    System.currentTimeMillis(),
+                    start,
+                    plan.copy(presetId = "work"),
                 ),
             )
         }
@@ -105,6 +119,7 @@ class FocusFlowTest {
     fun anyTenOrMoreWordsEndAnOptedInSession() {
         launchSession(true)
         compose.onNodeWithTag("leave-focus").performClick()
+        compose.onNodeWithText(context.getString(R.string.exit_title)).assertIsDisplayed()
         compose.onNodeWithTag("confirm-exit").assertIsNotEnabled()
         compose.onNodeWithTag("exit-input")
             .performTextInput("one two three four five six seven eight nine")
@@ -157,21 +172,57 @@ class FocusFlowTest {
         compose.onNodeWithTag("exit-input").assertDoesNotExist()
         assertFalse(runBlocking { FocusStore(context.focusDataStore).sessions.first().isActive })
     }
+
+    @Test
+    fun timedCompletionPreservesIntentionAndExitPolicyAndCanKeepGoing() {
+        val clock = AndroidFocusClock(context)
+        val now = clock.now()
+        launchSession(
+            true,
+            FocusPlan(intention = "Finish chapter 3", durationMinutes = 1),
+            now.copy(epochMillis = now.epochMillis - 120_000, elapsedRealtimeMillis = now.elapsedRealtimeMillis - 120_000),
+        )
+        compose.onNodeWithTag("session-intention").assertTextEquals("Finish chapter 3")
+        compose.onNodeWithTag("focus-apps").performScrollToNode(hasTestTag("time-reached-finish"))
+        compose.onNodeWithTag("time-reached-finish").performClick()
+        compose.onNodeWithTag("exit-input").performTextInput("one two three four five six seven eight nine")
+        compose.onNodeWithTag("confirm-exit").assertIsNotEnabled()
+        compose.onNodeWithText(context.getString(R.string.stay_focused)).performClick()
+        compose.onNodeWithTag("focus-apps").performScrollToNode(hasTestTag("keep-going"))
+        compose.onNodeWithTag("keep-going").performClick()
+        compose.onNodeWithTag("duration-choice-15").performClick()
+        compose.onNodeWithTag("duration-save").performClick()
+        awaitModel(compose, requireNotNull(scenario)) {
+            !it.busy && it.session?.remainingMillis(clock.now())?.let { remaining -> remaining > 0 } == true
+        }
+        val saved = runBlocking { FocusStore(context.focusDataStore).sessions.first() }
+        assertTrue(saved.isActive)
+        assertTrue(saved.requireExitText)
+        assertEquals("Finish chapter 3", saved.intention)
+        scenario?.recreate()
+        compose.onNodeWithTag("session-intention").assertTextEquals("Finish chapter 3")
+        compose.onNodeWithTag("time-reached").assertDoesNotExist()
+    }
 }
 
 internal fun awaitAppCatalog(
     compose: ComposeTestRule,
     scenario: ActivityScenario<MainActivity>,
 ) {
-    var catalogError = false
-    compose.waitUntil(15_000) {
-        var loaded = false
-        scenario.onActivity {
-            val state = ViewModelProvider(it)[FocusViewModel::class.java].state.value
-            loaded = state.catalogLoaded
-            catalogError = state.catalogError
-        }
-        loaded
+    awaitModel(compose, scenario) { it.catalogLoaded }
+    scenario.onActivity {
+        assertFalse("The app catalog could not be loaded", ViewModelProvider(it)[FocusViewModel::class.java].state.value.catalogError)
     }
-    assertFalse("The app catalog could not be loaded", catalogError)
+}
+
+internal fun awaitModel(
+    compose: ComposeTestRule,
+    scenario: ActivityScenario<MainActivity>,
+    condition: (FocusUiState) -> Boolean,
+) {
+    compose.waitUntil(15_000) {
+        var ready = false
+        scenario.onActivity { ready = condition(ViewModelProvider(it)[FocusViewModel::class.java].state.value) }
+        ready
+    }
 }

@@ -52,6 +52,23 @@ until you change Android's Home selection.
 On upgrade, an already-active old session retains the word-count challenge,
 but its custom phrase is removed and no longer needs to be remembered or matched.
 
+## Presets, intentions, and timed sessions
+
+Presets store app selections and names only on this device. The Work preset
+inherits your previous selection on upgrade. Preset changes cannot alter an
+already-running session, and deleting a preset is confirmed before removal.
+
+An optional intention is visible on Home and saved in app-private storage only
+while the session is active, so reopening works. It is cleared on normal exit
+and is never uploaded or logged. Do not enter sensitive information.
+
+Timed sessions never auto-exit or launch another app. Finish and Keep going
+appear when you are on or return to Home. Finish still follows your chosen
+optional 10+ word challenge; "What do you need your phone for?" changes only the
+question, not that rule. Keep going adds time or becomes open-ended explicitly.
+No background reminders, exact alarms, notifications, breaks, DND changes, or
+interference with system alarms is included.
+
 ## Recovery without cooperating with the app
 
 1. Open Android Settings using the notification shade or Quick Settings.

@@ -7,6 +7,7 @@ MainActivity
        -> AppCatalog -> Android LauncherApps, current user only
        -> FocusStore -> Preferences DataStore, atomic edit
             -> ExitText (pure Kotlin word counting)
+            -> FocusPreset / FocusPlan / FocusTime (local configuration and timing)
 ```
 
 `MainActivity` declares Android's HOME category. It neither grants itself the
@@ -22,10 +23,25 @@ disable, and profile availability changes. Failed launches are reported.
 
 `FocusStore` owns the persisted package allowlist, optional exit-challenge choice, active
 flag, and wall-clock start timestamp. All fields are committed together.
+Version 1.2 also snapshots the preset name, optional intention, and timed deadline.
+Presets use independent named app sets; only idle configuration can be edited.
+The first initialization seeds four presets and carries the old app selection
+into Work without modifying an active legacy session.
 Starting while active cannot replace the configuration. Ending focus checks
 the stored choice inside the atomic edit: any text with at least 10 words is
 required only when enabled. No preset or comparison text exists, and entered
 text is never persisted. Reconstructing UI state does not bypass an enabled gate.
+The intention is different from exit text: it is persisted only while active so
+Home can display it after process recreation, and removed atomically on exit.
+
+Timed sessions save both an epoch deadline and an elapsed-realtime deadline
+with the Android boot counter. `remainingMillis` uses the monotonic deadline
+on the same boot and the epoch deadline after reboot. Missing boot-counter
+support is logged explicitly and uses the epoch fallback. Time reaching zero is
+derived state, not an exit mutation. Keep going changes only the deadline after
+the current timer expires; it retains the original start, apps, intention and
+exit choice. UI ticking stops while Home is not visible; no alarms, services,
+notifications, app launches, or extra permissions are involved.
 
 The DataStore migration removes legacy custom phrases. An active legacy session
 retains a word-count gate, without requiring its old phrase. Idle legacy settings

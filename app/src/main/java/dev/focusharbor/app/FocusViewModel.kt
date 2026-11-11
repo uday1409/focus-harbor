@@ -18,6 +18,9 @@ import dev.focusharbor.app.apps.AppCatalog
 import dev.focusharbor.app.apps.LaunchableApp
 import dev.focusharbor.app.focus.FocusSession
 import dev.focusharbor.app.focus.FocusStore
+import dev.focusharbor.app.focus.AndroidFocusClock
+import dev.focusharbor.app.focus.FocusPlan
+import dev.focusharbor.app.focus.FocusPreset
 import dev.focusharbor.app.focus.SessionMutation
 import dev.focusharbor.app.focus.focusDataStore
 import java.io.IOException
@@ -25,7 +28,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -39,6 +41,10 @@ data class FocusUiState(
     val defaultHome: Boolean = false,
     val draftAllowed: Set<String> = emptySet(),
     val draftRequireExitText: Boolean = false,
+    val presets: List<FocusPreset> = emptyList(),
+    val selectedPresetId: String? = null,
+    val draftIntention: String = "",
+    val draftDurationMinutes: Int? = null,
     val safetyAccepted: Boolean = false,
     val query: String = "",
     val busy: Boolean = false,
@@ -48,6 +54,7 @@ data class FocusUiState(
 class FocusViewModel(application: Application) : AndroidViewModel(application) {
     private val store = FocusStore(application.focusDataStore)
     private val catalog = AppCatalog(application)
+    private val clock = AndroidFocusClock(application)
     private val mutableState = MutableStateFlow(FocusUiState())
     val state = mutableState.asStateFlow()
     private var storageJob: Job? = null
@@ -61,28 +68,91 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
         storageJob?.cancel()
         mutableState.update { it.copy(storageError = false) }
         storageJob = viewModelScope.launch {
-            store.sessions.catch { error ->
-                if (error !is IOException) throw error
+            try {
+                val context = getApplication<Application>()
+                store.initializePresets(
+                    listOf(
+                        FocusPreset("work", context.getString(R.string.preset_work)),
+                        FocusPreset("study", context.getString(R.string.preset_study)),
+                        FocusPreset("sleep", context.getString(R.string.preset_sleep)),
+                        FocusPreset("family", context.getString(R.string.preset_family)),
+                    ),
+                )
+                store.states.collect { saved ->
+                    val session = saved.session
+                    mutableState.update {
+                        val initializeDraft = it.session == null ||
+                            (it.session.isActive && !session.isActive)
+                        val resetApps = initializeDraft || it.selectedPresetId != saved.selectedPresetId
+                        val selected = saved.presets.firstOrNull { preset -> preset.id == saved.selectedPresetId }
+                        it.copy(
+                            session = session,
+                            presets = saved.presets,
+                            selectedPresetId = saved.selectedPresetId,
+                            storageError = false,
+                            draftAllowed = if (resetApps) {
+                                selected?.allowedPackages ?: session.allowedPackages
+                            } else {
+                                it.draftAllowed
+                            },
+                            draftRequireExitText = if (initializeDraft) {
+                                session.requireExitText
+                            } else {
+                                it.draftRequireExitText
+                            },
+                            draftIntention = if (initializeDraft) "" else it.draftIntention,
+                            draftDurationMinutes = if (initializeDraft) saved.lastDurationMinutes else it.draftDurationMinutes,
+                            safetyAccepted = if (initializeDraft) false else it.safetyAccepted,
+                        )
+                    }
+                }
+            } catch (error: IOException) {
                 Log.e(TAG, "Unable to read the saved focus session.", error)
                 mutableState.update { it.copy(storageError = true) }
-            }.collect { session ->
-                mutableState.update {
-                    val initializeDraft = it.session == null ||
-                        (it.session.isActive && !session.isActive)
-                    it.copy(
-                        session = session,
-                        storageError = false,
-                        draftAllowed = if (initializeDraft) session.allowedPackages else it.draftAllowed,
-                        draftRequireExitText = if (initializeDraft) {
-                            session.requireExitText
-                        } else {
-                            it.draftRequireExitText
-                        },
-                        safetyAccepted = if (initializeDraft) false else it.safetyAccepted,
-                    )
-                }
             }
         }
+    }
+
+    fun currentTime() = clock.now()
+
+    fun setIntention(text: String) {
+        if (canEdit()) mutableState.update { it.copy(draftIntention = text) }
+    }
+
+    fun setDuration(minutes: Int?) {
+        if (!canEdit()) return
+        if (FocusStore.validDuration(minutes)) {
+            mutableState.update { it.copy(draftDurationMinutes = minutes) }
+        } else {
+            notify(R.string.invalid_duration)
+        }
+    }
+
+    fun selectPreset(id: String) {
+        if (canEdit()) mutate { store.selectPreset(id, state.value.draftAllowed) }
+    }
+
+    fun createPreset(name: String) {
+        if (canEdit()) mutate { store.createPreset(name, state.value.draftAllowed) }
+    }
+
+    fun renamePreset(name: String) {
+        val id = state.value.selectedPresetId
+        if (canEdit() && id != null) mutate { store.renamePreset(id, name) }
+    }
+
+    fun deletePreset() {
+        val id = state.value.selectedPresetId
+        if (canEdit() && id != null) mutate { store.deletePreset(id) }
+    }
+
+    fun saveAppSelection() {
+        val id = state.value.selectedPresetId
+        if (canEdit() && id != null) mutate { store.saveSelection(id, state.value.draftAllowed) }
+    }
+
+    fun keepGoing(minutes: Int?) {
+        if (!state.value.busy) mutate { store.keepGoing(minutes, clock.now()) }
     }
 
     fun refresh() {
@@ -125,7 +195,10 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun clearSelection() {
-        if (canEdit()) mutableState.update { it.copy(draftAllowed = emptySet()) }
+        if (canEdit()) {
+            mutableState.update { it.copy(draftAllowed = emptySet()) }
+            saveAppSelection()
+        }
     }
 
     fun setSafetyAccepted(accepted: Boolean) {
@@ -163,7 +236,12 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
                 allowedPackages = current.draftAllowed,
                 requireExitText = current.draftRequireExitText,
                 availablePackages = current.apps.map { it.packageName }.toSet(),
-                nowMillis = System.currentTimeMillis(),
+                now = clock.now(),
+                plan = FocusPlan(
+                    presetId = current.selectedPresetId,
+                    intention = current.draftIntention,
+                    durationMinutes = current.draftDurationMinutes,
+                ),
             )
         }
     }
@@ -179,12 +257,20 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
             try {
                 val result = action()
                 val message = when (result) {
-                    SessionMutation.STARTED, SessionMutation.ENDED -> null
+                    SessionMutation.STARTED, SessionMutation.ENDED,
+                    SessionMutation.CONFIGURATION_SAVED, SessionMutation.EXTENDED -> null
                     SessionMutation.ALREADY_ACTIVE -> R.string.already_active
                     SessionMutation.NOT_ACTIVE -> R.string.not_active
                     SessionMutation.NO_ALLOWED_APPS -> R.string.select_apps
                     SessionMutation.APPS_UNAVAILABLE -> R.string.apps_unavailable
                     SessionMutation.EXIT_TEXT_TOO_SHORT -> R.string.exit_text_too_short
+                    SessionMutation.PRESET_NOT_FOUND -> R.string.preset_not_found
+                    SessionMutation.INVALID_PRESET_NAME -> R.string.invalid_preset_name
+                    SessionMutation.DUPLICATE_PRESET_NAME -> R.string.duplicate_preset_name
+                    SessionMutation.LAST_PRESET -> R.string.last_preset
+                    SessionMutation.INVALID_INTENTION -> R.string.invalid_intention
+                    SessionMutation.INVALID_DURATION -> R.string.invalid_duration
+                    SessionMutation.TIMER_NOT_FINISHED -> R.string.timer_not_finished
                 }
                 mutableState.update { it.copy(message = message) }
             } catch (error: IOException) {

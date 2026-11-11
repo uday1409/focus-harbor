@@ -10,4 +10,7 @@ Keep the optional 10-or-more-word exit check inside the atomic DataStore edit.
 Any wording is valid; never match a preset or persist entered exit text.
 An unchecked pre-session option permits immediate exit without text.
 Keep active configuration immutable and surface persistence/launch errors.
+Keep presets local and session snapshots immutable. Clear intention text on exit.
+Timed sessions offer Finish / Keep going on Home without automatic exit or
+bypassing the existing optional word challenge. No break feature is included.
 Only run connected tests on a dedicated emulator, never an unspecified device.

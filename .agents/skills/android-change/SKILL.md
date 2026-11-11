@@ -18,6 +18,9 @@ compatibility: JDK 17 and Android SDK platform 36 with Build Tools 35.0.0; a ded
 4. Update the smallest implementation and regression tests. Follow existing
    Compose state and Android resource patterns. Do not introduce new privileged
    permissions or background monitors.
+   Presets must not mutate active snapshots. Timers must survive reopening and
+   never auto-exit or bypass the selected word policy. Intentions are stored only
+   during the active session and cleared by the same exit transaction.
 5. Run the wrapper's focused unit tests, `:app:lintDebug`, and `:app:assembleDebug`.
    For UI/session/lifecycle work, run `:app:connectedDebugAndroidTest` on a
    dedicated emulator only. Run commands from the repository root; see the

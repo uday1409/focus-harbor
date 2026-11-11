@@ -13,9 +13,17 @@ boundary, or system-wide app blocker. Read `specs/focus-mode.md` and
 - Keep Android recovery, uninstallation, the notification shade, Recents, and
   the device's emergency-call mechanisms untouched.
 - The exit challenge is optional before focus, off by default. When enabled,
-  any text with at least 10 words permits exit; no preset or matching is allowed.
+  any text with at least 10 words permits exit; no preset exit text or match is required.
   When disabled, exit immediately. Enforce the stored choice atomically in DataStore.
 - An active session's exit choice and allowlist cannot be edited or overwritten.
+- Presets are local app selections. Editing a preset must never rewrite an
+  active snapshot. Keep at least one preset and preserve legacy selections.
+- Intentions are optional, local to an active session, and removed on exit.
+  Do not log them or retain an intention/reason history.
+- Timed expiry never ends focus, opens apps, or bypasses the selected exit
+  challenge. Finish uses the normal exit transaction; Keep going is explicit.
+- Do not add breaks, alarms, notifications, or background services for timers.
+  Offer completion when the user is on or returns to Home.
 - Persist a complete session before showing success. Surface storage and
   app-launch failures; never reset an unreadable session to an idle default.
 - Do not add analytics, networking, accounts, runtime AI, or cloud storage.

@@ -39,8 +39,8 @@ inspects the application's package ID, SDK range and packaged permissions,
 verifies its signature, and exports:
 
 ```text
-dist/focus-harbor-1.1.0-debug.apk
-dist/focus-harbor-1.1.0-debug.apk.sha256
+dist/focus-harbor-1.2.0-debug.apk
+dist/focus-harbor-1.2.0-debug.apk.sha256
 ```
 
 These are ignored generated files. The APK is debug-signed, debuggable, and
@@ -85,17 +85,21 @@ acceptance test temporarily grants the emulator's Home role and restores its
 original launcher in cleanup; it refuses physical hardware. Tests never place
 calls.
 
-Acceptance tests cover both optional exit choices, setup/start, Home-role recovery,
-allowlist visibility, the 9/10/11-word boundary, Back/dismissal, and recreation. Reports are under
+Acceptance tests cover both optional exit choices, preset CRUD and independent
+app sets, intention persistence, duration setup, Finish/Keep going, Home-role
+recovery, allowlist visibility, the 9/10/11-word boundary, Back/dismissal, and
+recreation. Domain tests also cover legacy upgrades and same-boot/reboot timing. Reports are under
 `app/build/reports/androidTests/connected/debug`.
 Use an emulator for additional force-stop/reboot/Home-role recovery checks.
 Do not claim physical-device or OEM coverage from these tests.
 
 ## GitHub
 
-The built evaluation APK and its checksum are available in the
-[private preview release](https://github.com/uday1409/focus-harbor/releases/tag/v1.1.0-preview).
-Sign in to the repository owner's GitHub account to download private assets.
+The last published evaluation APK and its checksum are available in the
+[1.1.0 preview release](https://github.com/uday1409/focus-harbor/releases/tag/v1.1.0-preview).
+The 1.2.0 APK is built locally in `dist` but has not been uploaded. Publication
+is awaiting the owner's confirmation of the repository's intended visibility;
+do not assume that earlier private-release access still applies.
 
 The workflow builds an APK/checksum artifact and runs API 35 emulator tests
 on pushes to `main` and manual dispatch. Pull requests run the JVM/lint/build
@@ -107,8 +111,8 @@ a user's device. Failed acceptance runs retain Android window state and system
 events in the emulator-report artifact without hiding the original test failure.
 The emulator job pins Ubuntu 24.04 and uses an API 35 AOSP Pixel 2 image with two
 virtual cores, 2 GB RAM, and a bounded 2 GB userdata partition. This fits standard
-hosted-runner resources without depending on Google services. The same six UI
-cases are also validated locally on Android 16/API 36; CI provides additional
+hosted-runner resources without depending on Google services. The same UI
+acceptance suite is also validated locally on Android 16/API 36; CI provides additional
 Android 15/API 35 coverage. Compile/target SDK remains 36, and no UI test is skipped.
 
 After authenticating GitHub CLI to the intended personal account, publishing a

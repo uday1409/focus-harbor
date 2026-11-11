@@ -51,7 +51,7 @@ class FocusStoreTest {
         assertFalse(store.sessions.first().requireExitText)
         assertEquals(
             SessionMutation.STARTED,
-            store.startSession(setOf("example.notes"), true, apps, 123),
+            store.startSession(setOf("example.notes"), true, apps, FocusTime(123)),
         )
         val session = store.sessions.first()
         assertTrue(session.isActive)
@@ -63,11 +63,11 @@ class FocusStoreTest {
     @Test
     fun activeSessionCannotBeReconfiguredByStartingAgain() = runTest {
         val store = FocusStore(dataStore(backgroundScope))
-        store.startSession(setOf("example.notes"), true, apps, 123)
+        store.startSession(setOf("example.notes"), true, apps, FocusTime(123))
         val before = store.sessions.first()
         assertEquals(
             SessionMutation.ALREADY_ACTIVE,
-            store.startSession(setOf("example.phone"), false, apps, 999),
+            store.startSession(setOf("example.phone"), false, apps, FocusTime(999)),
         )
         assertEquals(before, store.sessions.first())
     }
@@ -75,7 +75,7 @@ class FocusStoreTest {
     @Test
     fun shortTextNeverEndsAnOptedInSession() = runTest {
         val store = FocusStore(dataStore(backgroundScope))
-        store.startSession(apps, true, apps, 123)
+        store.startSession(apps, true, apps, FocusTime(123))
         val before = store.sessions.first()
         for (short in listOf("", "one two three four five six seven eight nine", "!!! ".repeat(10))) {
             assertEquals(SessionMutation.EXIT_TEXT_TOO_SHORT, store.endSession(short))
@@ -86,7 +86,7 @@ class FocusStoreTest {
     @Test
     fun anyTenOrMoreWordsEndFocusAndPreserveTheNextSessionChoice() = runTest {
         val store = FocusStore(dataStore(backgroundScope))
-        store.startSession(apps, true, apps, 123)
+        store.startSession(apps, true, apps, FocusTime(123))
         assertEquals(SessionMutation.ENDED, store.endSession(text))
         val session = store.sessions.first()
         assertFalse(session.isActive)
@@ -94,7 +94,7 @@ class FocusStoreTest {
         assertEquals(apps, session.allowedPackages)
         assertTrue(session.requireExitText)
         assertEquals(SessionMutation.NOT_ACTIVE, store.endSession(text))
-        store.startSession(apps, true, apps, 456)
+        store.startSession(apps, true, apps, FocusTime(456))
         assertEquals(
             SessionMutation.ENDED,
             store.endSession("Different words do not need to match any preset anymore today"),
@@ -104,7 +104,7 @@ class FocusStoreTest {
     @Test
     fun optingOutAllowsImmediateExitWithoutAnyText() = runTest {
         val store = FocusStore(dataStore(backgroundScope))
-        store.startSession(apps, false, apps, 123)
+        store.startSession(apps, false, apps, FocusTime(123))
         assertFalse(store.sessions.first().requireExitText)
         assertEquals(SessionMutation.ENDED, store.endSession(""))
         assertFalse(store.sessions.first().isActive)
@@ -115,11 +115,11 @@ class FocusStoreTest {
         val store = FocusStore(dataStore(backgroundScope))
         assertEquals(
             SessionMutation.NO_ALLOWED_APPS,
-            store.startSession(emptySet(), false, apps, 1),
+            store.startSession(emptySet(), false, apps, FocusTime(1)),
         )
         assertEquals(
             SessionMutation.APPS_UNAVAILABLE,
-            store.startSession(setOf("example.uninstalled"), true, apps, 1),
+            store.startSession(setOf("example.uninstalled"), true, apps, FocusTime(1)),
         )
         assertEquals(FocusSession(), store.sessions.first())
     }
@@ -127,7 +127,7 @@ class FocusStoreTest {
     @Test
     fun repositoryRecreationReadsThePersistedSession() = runTest {
         val preferences = dataStore(backgroundScope)
-        FocusStore(preferences).startSession(apps, true, apps, 123)
+        FocusStore(preferences).startSession(apps, true, apps, FocusTime(123))
         val recreated = FocusStore(preferences).sessions.first()
         assertTrue(recreated.isActive)
         assertTrue(recreated.requireExitText)
@@ -138,8 +138,8 @@ class FocusStoreTest {
     fun simultaneousStartsCannotOverwriteTheWinningSession() = runTest {
         val store = FocusStore(dataStore(backgroundScope))
         val results = listOf(
-            async { store.startSession(setOf("example.notes"), true, apps, 123) },
-            async { store.startSession(setOf("example.phone"), false, apps, 999) },
+            async { store.startSession(setOf("example.notes"), true, apps, FocusTime(123)) },
+            async { store.startSession(setOf("example.phone"), false, apps, FocusTime(999)) },
         ).awaitAll()
         assertEquals(1, results.count { it == SessionMutation.STARTED })
         assertEquals(1, results.count { it == SessionMutation.ALREADY_ACTIVE })
@@ -165,7 +165,7 @@ class FocusStoreTest {
             },
         )
         try {
-            failingStore.startSession(apps, true, apps, 1)
+            failingStore.startSession(apps, true, apps, FocusTime(1))
             fail("A failed write must not report a started session")
         } catch (_: IOException) {
             // The caller must surface the failure; there is no success-shaped fallback.

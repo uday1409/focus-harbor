@@ -19,11 +19,41 @@ Compile/target API: 36. This is a Home-screen filter, not an app firewall.
 | Setup | Select apps, choose the optional word challenge, select Home, accept the boundary | Successful atomic start |
 | Focus | Only allowed installed apps shown; configuration hidden | Leave immediately if opted out; otherwise open the challenge |
 | Exit challenge | Accept any fresh text with at least 10 words | Valid word count atomically ends focus; cancel stays focused |
+| Time reached | Keep focus active and show Finish / Keep going on Home | Finish follows the selected exit policy; Keep going sets a new deadline or open-ended mode |
 
 Process death, configuration changes, reopening from the app icon, Home intents,
 and reboot do not intentionally clear an active persisted session. After reboot,
 the session is read when Android next opens the launcher; there is no boot service.
-The elapsed clock is informational, uses wall time, and can change with clock edits.
+The elapsed clock is informational and uses wall time. Timed deadlines use
+monotonic elapsed time on the same boot, with a saved wall-clock deadline after
+reboot or when the platform boot counter is unavailable.
+
+## Presets, intention, and duration
+
+- Seed editable Work, Study, Sleep, and Time with family presets on upgrade or
+  first use. Put the previous saved app selection in Work; do not lose an active
+  session or change its apps/exit policy during initialization.
+- Each preset stores its own name and app set locally. Save picker changes when
+  closing it, switching presets, or starting focus. Support creating, renaming,
+  and confirmed deletion; retain at least one preset.
+- Snapshot the selected preset name and apps when starting. Preset changes are
+  blocked during focus and never mutate the active snapshot.
+- An optional intention of up to 160 trimmed characters appears on focus Home.
+  Persist it only for the active session so reopening works; delete it on normal
+  exit. Never put intentions in preset history, logs, analytics, or cloud storage.
+- Default to open-ended. Offer 15/25/45/60-minute choices and custom 1-1440 minutes.
+  Remember the last start-duration choice independently of presets.
+- Expiry never clears the active session, launches an app, changes Home, or
+  bypasses the selected optional 10+ word exit policy.
+- Show Finish / Keep going on Home when due, including after process death or
+  reboot. No alarm, background popup, notification permission, or service is added.
+- Keep going adds a newly selected duration from the time of the explicit action,
+  or changes the ongoing session to open-ended. Preserve apps, intention, exit
+  policy, and the original start time.
+- The exit dialog asks "What do you need your phone for?" This is a wording
+  change only: the optional 10+ word policy remains exactly as before.
+- Temporary breaks are not part of this release. Alarms, DND, and recovery remain
+  entirely under Android/user control, including for Sleep presets.
 
 ## Configuration and exit
 
@@ -83,6 +113,11 @@ routes, not normal in-app exits.
 | F12 | User can restore their original launcher without app cooperation | `SetupFlowTest` restores the emulator's stock Home role in cleanup; uninstall recovery is an additional manual check |
 | F13 | Opting out allows immediate exit without text | `FocusStoreTest.optingOutAllowsImmediateExitWithoutAnyText`, `FocusFlowTest.optingOutEndsFocusImmediatelyWithoutShowingATextChallenge`, `SetupFlowTest.userCanStartWithTheChallengeOffAndLeaveImmediately` |
 | F14 | Upgrade preserves active intent and removes legacy phrases | `FocusStoreTest.upgradingAnActiveLegacySessionKeepsTheGateButDeletesTheOldText`, `FocusStoreTest.upgradingIdleLegacySettingsDefaultsTheOptionalGateOff` |
+| F15 | Initial presets preserve old app selections and active sessions | `FocusPresetsAndTimingTest.presetInitializationPreservesLegacySelectionAndAnActiveSession` |
+| F16 | Preset CRUD and app selections remain independent | `FocusPresetsAndTimingTest.switchingPresetsSavesIndependentSelections`, `SetupFlowTest.presetsCanBeCreatedRenamedAndDeletedFromSetup` |
+| F17 | Intention appears on Home, survives recreation, and clears on exit | `FocusPresetsAndTimingTest.activePresetAndIntentionAreSnapshotsAndIntentionIsClearedOnExit`, `SetupFlowTest.presetsKeepSeparateAppsAndTheSessionShowsItsIntention` |
+| F18 | Deadline expiry never exits or bypasses selected word friction | `FocusPresetsAndTimingTest.reachingTimeNeverEndsFocusOrBypassesTheWordChallenge`, `FocusFlowTest.timedCompletionPreservesIntentionAndExitPolicyAndCanKeepGoing` |
+| F19 | Same-boot clock changes and reboot timing are handled explicitly | `FocusTimeTest` |
 
 OEM-specific behavior and Android 8/9 Home selection require device-matrix testing
 before wider distribution. Do not describe emulator evidence as OnePlus testing.

@@ -19,6 +19,9 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.performTextInput
+import androidx.compose.ui.test.performTextReplacement
+import androidx.compose.ui.test.assertTextEquals
 import androidx.datastore.preferences.core.edit
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
@@ -27,6 +30,8 @@ import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.focusharbor.app.focus.FocusStore
 import dev.focusharbor.app.focus.FocusSession
+import dev.focusharbor.app.focus.AndroidFocusClock
+import dev.focusharbor.app.focus.remainingMillis
 import dev.focusharbor.app.focus.focusDataStore
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -102,6 +107,74 @@ class SetupFlowTest {
         assertFalse(runBlocking { FocusStore(context.focusDataStore).sessions.first().isActive })
     }
 
+    @Test
+    fun presetsKeepSeparateAppsAndTheSessionShowsItsIntention() {
+        val apps = context.getSystemService(LauncherApps::class.java)
+            .getActivityList(null, Process.myUserHandle())
+            .map { it.componentName.packageName }
+            .filter { it != context.packageName }
+            .distinct()
+        assertTrue(apps.size >= 2)
+        chooseApp(apps[0])
+        selectPreset("study")
+        chooseApp(apps[1])
+        selectPreset("work")
+        awaitModel(compose, requireNotNull(scenario)) { it.draftAllowed == setOf(apps[0]) }
+        compose.onNodeWithTag("setup-list").performScrollToNode(hasTestTag("duration-selector"))
+        compose.onNodeWithTag("duration-selector").performClick()
+        compose.onNodeWithTag("duration-choice-25").performClick()
+        compose.onNodeWithTag("duration-save").performClick()
+        compose.onNodeWithTag("setup-list").performScrollToNode(hasTestTag("intention-input"))
+        compose.onNodeWithTag("intention-input").performTextInput("Finish chapter 3")
+        compose.onNodeWithTag("setup-list").performScrollToNode(hasTestTag("safety-ack"))
+        compose.onNodeWithTag("safety-ack").performClick()
+        compose.onNodeWithTag("start-focus").assertIsEnabled().performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithTag("session-intention").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("session-intention").assertTextEquals("Finish chapter 3")
+        val session = runBlocking { FocusStore(context.focusDataStore).sessions.first() }
+        assertEquals(context.getString(R.string.preset_work), session.presetName)
+        assertEquals(setOf(apps[0]), session.allowedPackages)
+        assertTrue(requireNotNull(session.remainingMillis(AndroidFocusClock(context).now())) > 0)
+    }
+
+    @Test
+    fun presetsCanBeCreatedRenamedAndDeletedFromSetup() {
+        compose.onNodeWithTag("setup-list").performScrollToNode(hasTestTag("preset-new"))
+        compose.onNodeWithTag("preset-new").performClick()
+        compose.onNodeWithTag("preset-name-input").performTextInput("Reading")
+        compose.onNodeWithTag("preset-save").performClick()
+        awaitModel(compose, requireNotNull(scenario)) {
+            !it.busy && it.presets.any { preset -> preset.id == it.selectedPresetId && preset.name == "Reading" }
+        }
+        compose.onNodeWithTag("preset-rename").performClick()
+        compose.onNodeWithTag("preset-name-input").performTextReplacement("Reading today")
+        compose.onNodeWithTag("preset-save").performClick()
+        awaitModel(compose, requireNotNull(scenario)) { !it.busy && it.presets.any { preset -> preset.name.contains("today") } }
+        compose.onNodeWithTag("preset-delete").performClick()
+        compose.onNodeWithTag("preset-delete-confirm").performClick()
+        awaitModel(compose, requireNotNull(scenario)) { !it.busy && it.presets.size == 4 }
+    }
+
+    private fun selectPreset(id: String) {
+        compose.onNodeWithTag("setup-list").performScrollToNode(hasTestTag("preset-selector"))
+        compose.onNodeWithTag("preset-selector").performClick()
+        compose.onNodeWithTag("preset-option-$id").performClick()
+        awaitModel(compose, requireNotNull(scenario)) { !it.busy && it.selectedPresetId == id }
+    }
+
+    private fun chooseApp(packageName: String) {
+        compose.onNodeWithTag("setup-list")
+            .performScrollToNode(hasText(context.getString(R.string.choose_apps)))
+        compose.onNodeWithText(context.getString(R.string.choose_apps)).performClick()
+        awaitAppCatalog(compose, requireNotNull(scenario))
+        compose.onNodeWithTag("app-picker-list").performScrollToNode(hasTestTag("pick-$packageName"))
+        compose.onNodeWithTag("pick-$packageName").performClick()
+        compose.onNodeWithText(context.getString(R.string.done)).performClick()
+        awaitModel(compose, requireNotNull(scenario)) { !it.busy }
+    }
+
     private fun configureAndStart(requireExitText: Boolean): FocusSession {
         val selected = context.getSystemService(LauncherApps::class.java)
             .getActivityList(null, Process.myUserHandle())
@@ -122,6 +195,7 @@ class SetupFlowTest {
             .performScrollToNode(hasTestTag("pick-$selected"))
         compose.onNodeWithTag("pick-$selected").performClick()
         compose.onNodeWithText(context.getString(R.string.done)).performClick()
+        awaitModel(compose, requireNotNull(scenario)) { !it.busy }
         compose.onNodeWithTag("setup-list")
             .performScrollToNode(hasTestTag("safety-ack"))
         compose.onNodeWithTag("safety-ack").performClick()
