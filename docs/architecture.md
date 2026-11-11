@@ -6,7 +6,7 @@ MainActivity
   -> FocusViewModel (immutable StateFlow)
        -> AppCatalog -> Android LauncherApps, current user only
        -> FocusStore -> Preferences DataStore, atomic edit
-            -> ExitPhrase (pure Kotlin rules)
+            -> ExitText (pure Kotlin word counting)
 ```
 
 `MainActivity` declares Android's HOME category. It neither grants itself the
@@ -20,19 +20,25 @@ thread, and sorts by locale. It does not enumerate every installed package and
 does not request `QUERY_ALL_PACKAGES`. Resume refreshes account for uninstall,
 disable, and profile availability changes. Failed launches are reported.
 
-`FocusStore` owns the persisted package allowlist, normalized exit text, active
+`FocusStore` owns the persisted package allowlist, optional exit-challenge choice, active
 flag, and wall-clock start timestamp. All fields are committed together.
-Starting while active cannot replace the configuration. Ending focus compares
-the entered text with the stored text inside the same atomic edit that clears
-the active flag. Reconstructing UI state does not create an exit path.
+Starting while active cannot replace the configuration. Ending focus checks
+the stored choice inside the atomic edit: any text with at least 10 words is
+required only when enabled. No preset or comparison text exists, and entered
+text is never persisted. Reconstructing UI state does not bypass an enabled gate.
+
+The DataStore migration removes legacy custom phrases. An active legacy session
+retains a word-count gate, without requiring its old phrase. Idle legacy settings
+default the new optional choice off. Explicit new-format choices are preserved.
 
 `FocusViewModel` owns drafts, role/catalog refresh, serialized user actions, and
 explicit errors. Read failures do not emit empty preferences. Failed writes are
 shown without pretending that the requested transition succeeded.
 
 The UI has setup, an app picker with normal-mode app launch, a focus grid, a
-read-only recovery guide, and an exit challenge. During focus, only the matching
-text transaction returns to setup. Back opens or closes the challenge.
+read-only recovery guide, and an optional exit challenge. An enabled challenge
+accepts any 10 or more words; otherwise Leave focus or Back ends focus immediately.
+When enabled, Back opens or closes the challenge without ending the session.
 App launch goes through `LauncherApps.startMainActivity` and checks the allowlist.
 The phone button uses `ACTION_DIAL`, not `ACTION_CALL`.
 
@@ -59,6 +65,6 @@ supply-chain security.
 
 App data is private to the application, not encrypted by an app-specific key.
 OS sandbox/encryption behavior applies. Backup/device-transfer exclusions keep
-the chosen phrase/session out of the app's Android backup rules. Rooted devices,
+the session settings out of the app's Android backup rules. Rooted devices,
 debugging access, keyboards, and allowed applications are outside the trust
 boundary. The evaluation APK is debuggable and must not hold secrets.

@@ -1,6 +1,6 @@
 ---
 name: android-change
-description: Implement or modify Focus Harbor Android launcher features, app allowlisting, focus persistence, or the ten-word exit challenge while preserving reversible device-safe behavior.
+description: Implement or modify Focus Harbor Android launcher features, app allowlisting, focus persistence, or the optional ten-or-more-word exit challenge while preserving reversible device-safe behavior.
 compatibility: JDK 17 and Android SDK platform 36 with Build Tools 35.0.0; a dedicated emulator is required for UI tests.
 ---
 
@@ -11,9 +11,10 @@ compatibility: JDK 17 and Android SDK platform 36 with Build Tools 35.0.0; a ded
    [safety guide](../../../docs/safety-and-recovery.md).
 2. Identify the acceptance criterion being changed. Preserve the distinction
    between a limited Home screen and system-wide enforcement.
-3. Keep phrase validation in `ExitPhrase`; keep session mutations inside
-   `FocusStore`'s atomic DataStore edits. Never expose a second exit path in UI
-   callbacks, lifecycle hooks, intents, or configuration changes.
+3. Keep word counting in `ExitText` and enforce the stored optional challenge
+   inside `FocusStore`'s atomic edits. Enabled means any 10 or more words;
+   disabled means immediate exit. Never match a preset, save entered text, or
+   let active-session callbacks change the stored choice.
 4. Update the smallest implementation and regression tests. Follow existing
    Compose state and Android resource patterns. Do not introduce new privileged
    permissions or background monitors.

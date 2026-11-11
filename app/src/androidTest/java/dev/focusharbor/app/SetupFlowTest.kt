@@ -9,6 +9,8 @@ import android.os.Process
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertIsOff
+import androidx.compose.ui.test.assertIsOn
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
@@ -17,7 +19,6 @@ import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
-import androidx.compose.ui.test.performTextInput
 import androidx.datastore.preferences.core.edit
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
@@ -25,11 +26,14 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
 import dev.focusharbor.app.focus.FocusStore
+import dev.focusharbor.app.focus.FocusSession
 import dev.focusharbor.app.focus.focusDataStore
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
@@ -80,19 +84,40 @@ class SetupFlowTest {
     }
 
     @Test
-    fun userCanConfigureAndStartFocusAndAndroidCanRestoreHome() {
+    fun userCanOptInBeforeFocusAndAndroidCanRestoreHome() {
+        val session = configureAndStart(true)
+        assertTrue(session.requireExitText)
+        scenario?.recreate()
+        compose.onNodeWithTag("leave-focus").assertIsDisplayed()
+    }
+
+    @Test
+    fun userCanStartWithTheChallengeOffAndLeaveImmediately() {
+        val session = configureAndStart(false)
+        assertFalse(session.requireExitText)
+        compose.onNodeWithTag("leave-focus").performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithTag("start-focus").fetchSemanticsNodes().isNotEmpty()
+        }
+        assertFalse(runBlocking { FocusStore(context.focusDataStore).sessions.first().isActive })
+    }
+
+    private fun configureAndStart(requireExitText: Boolean): FocusSession {
         val selected = context.getSystemService(LauncherApps::class.java)
             .getActivityList(null, Process.myUserHandle())
             .first { it.componentName.packageName != context.packageName }
             .componentName.packageName
-        val phrase = "I choose my attention and return to what matters now"
         compose.onNodeWithTag("start-focus").assertIsNotEnabled()
         compose.onNodeWithTag("setup-list")
-            .performScrollToNode(hasTestTag("setup-phrase"))
-        compose.onNodeWithTag("setup-phrase").performTextInput(phrase)
+            .performScrollToNode(hasTestTag("require-exit-text"))
+        compose.onNodeWithTag("require-exit-text").assertIsOff()
+        if (requireExitText) {
+            compose.onNodeWithTag("require-exit-text").performClick().assertIsOn()
+        }
         compose.onNodeWithTag("setup-list")
             .performScrollToNode(hasText(context.getString(R.string.choose_apps)))
         compose.onNodeWithText(context.getString(R.string.choose_apps)).performClick()
+        awaitAppCatalog(compose, requireNotNull(scenario))
         compose.onNodeWithTag("app-picker-list")
             .performScrollToNode(hasTestTag("pick-$selected"))
         compose.onNodeWithTag("pick-$selected").performClick()
@@ -106,9 +131,9 @@ class SetupFlowTest {
         }
         val session = runBlocking { FocusStore(context.focusDataStore).sessions.first() }
         assertTrue(session.isActive)
-        assertTrue(session.allowedPackages == setOf(selected))
-        scenario?.recreate()
-        compose.onNodeWithTag("leave-focus").assertIsDisplayed()
+        assertEquals(setOf(selected), session.allowedPackages)
+        assertEquals(requireExitText, session.requireExitText)
+        return session
     }
 
     private fun shell(command: String): String =

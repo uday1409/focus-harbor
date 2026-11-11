@@ -12,13 +12,14 @@ boundary, or system-wide app blocker. Read `specs/focus-mode.md` and
   usage-access monitoring, VPNs, package disabling, or lock-task behavior.
 - Keep Android recovery, uninstallation, the notification shade, Recents, and
   the device's emergency-call mechanisms untouched.
-- Only the stored matching 10-word text can perform a normal in-app exit.
-  Recheck it inside the atomic DataStore transaction, not just in the UI.
-- An active session's text and allowlist cannot be edited or overwritten.
+- The exit challenge is optional before focus, off by default. When enabled,
+  any text with at least 10 words permits exit; no preset or matching is allowed.
+  When disabled, exit immediately. Enforce the stored choice atomically in DataStore.
+- An active session's exit choice and allowlist cannot be edited or overwritten.
 - Persist a complete session before showing success. Surface storage and
   app-launch failures; never reset an unreadable session to an idle default.
 - Do not add analytics, networking, accounts, runtime AI, or cloud storage.
-  The exit text is local, visible friction, not a password.
+  Exit text is temporary friction, not a password; never persist it.
 - Never install, clear data on, change Home on, or run tests against a physical
   device without the user's explicit device-specific permission.
 

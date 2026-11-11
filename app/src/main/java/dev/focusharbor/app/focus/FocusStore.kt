@@ -1,6 +1,7 @@
 package dev.focusharbor.app.focus
 
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.DataMigration
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
@@ -12,7 +13,7 @@ import kotlinx.coroutines.flow.map
 
 data class FocusSession(
     val allowedPackages: Set<String> = emptySet(),
-    val exitPhrase: String = "",
+    val requireExitText: Boolean = false,
     val isActive: Boolean = false,
     val startedAtMillis: Long = 0,
 )
@@ -22,10 +23,9 @@ enum class SessionMutation {
     ENDED,
     ALREADY_ACTIVE,
     NOT_ACTIVE,
-    INVALID_PHRASE,
     NO_ALLOWED_APPS,
     APPS_UNAVAILABLE,
-    INCORRECT_PHRASE,
+    EXIT_TEXT_TOO_SHORT,
 }
 
 class FocusStore(private val dataStore: DataStore<Preferences>) {
@@ -33,7 +33,7 @@ class FocusStore(private val dataStore: DataStore<Preferences>) {
 
     suspend fun startSession(
         allowedPackages: Set<String>,
-        phrase: String,
+        requireExitText: Boolean,
         availablePackages: Set<String>,
         nowMillis: Long,
     ): SessionMutation {
@@ -41,13 +41,12 @@ class FocusStore(private val dataStore: DataStore<Preferences>) {
         dataStore.edit { preferences ->
             when {
                 preferences[ACTIVE] == true -> result = SessionMutation.ALREADY_ACTIVE
-                !ExitPhrase.isValid(phrase) -> result = SessionMutation.INVALID_PHRASE
                 allowedPackages.isEmpty() -> result = SessionMutation.NO_ALLOWED_APPS
                 !availablePackages.containsAll(allowedPackages) ->
                     result = SessionMutation.APPS_UNAVAILABLE
                 else -> {
                     preferences[ALLOWED] = allowedPackages.toSet()
-                    preferences[PHRASE] = ExitPhrase.normalize(phrase)
+                    preferences[REQUIRE_EXIT_TEXT] = requireExitText
                     preferences[STARTED_AT] = nowMillis
                     preferences[ACTIVE] = true
                     result = SessionMutation.STARTED
@@ -57,13 +56,13 @@ class FocusStore(private val dataStore: DataStore<Preferences>) {
         return result
     }
 
-    suspend fun endSession(enteredPhrase: String): SessionMutation {
+    suspend fun endSession(enteredText: String): SessionMutation {
         var result = SessionMutation.NOT_ACTIVE
         dataStore.edit { preferences ->
             when {
                 preferences[ACTIVE] != true -> result = SessionMutation.NOT_ACTIVE
-                !ExitPhrase.matches(preferences[PHRASE].orEmpty(), enteredPhrase) ->
-                    result = SessionMutation.INCORRECT_PHRASE
+                preferences[REQUIRE_EXIT_TEXT] == true && !ExitText.isValid(enteredText) ->
+                    result = SessionMutation.EXIT_TEXT_TOO_SHORT
                 else -> {
                     preferences[ACTIVE] = false
                     preferences.remove(STARTED_AT)
@@ -76,15 +75,33 @@ class FocusStore(private val dataStore: DataStore<Preferences>) {
 
     private fun Preferences.toSession() = FocusSession(
         allowedPackages = this[ALLOWED].orEmpty().toSet(),
-        exitPhrase = this[PHRASE].orEmpty(),
+        requireExitText = this[REQUIRE_EXIT_TEXT] ?: false,
         isActive = this[ACTIVE] ?: false,
         startedAtMillis = this[STARTED_AT] ?: 0,
     )
 
-    private companion object {
-        val ALLOWED = stringSetPreferencesKey("allowed_packages")
-        val PHRASE = stringPreferencesKey("exit_phrase")
-        val ACTIVE = booleanPreferencesKey("active")
-        val STARTED_AT = longPreferencesKey("started_at_millis")
+    companion object {
+        private val ALLOWED = stringSetPreferencesKey("allowed_packages")
+        private val REQUIRE_EXIT_TEXT = booleanPreferencesKey("require_exit_text")
+        private val LEGACY_PHRASE = stringPreferencesKey("exit_phrase")
+        private val ACTIVE = booleanPreferencesKey("active")
+        private val STARTED_AT = longPreferencesKey("started_at_millis")
+
+        val exitPolicyMigration: DataMigration<Preferences> = object : DataMigration<Preferences> {
+            override suspend fun shouldMigrate(currentData: Preferences): Boolean =
+                currentData.contains(LEGACY_PHRASE) ||
+                    (currentData[ACTIVE] == true && !currentData.contains(REQUIRE_EXIT_TEXT))
+
+            override suspend fun migrate(currentData: Preferences): Preferences {
+                val updated = currentData.toMutablePreferences()
+                if (!updated.contains(REQUIRE_EXIT_TEXT)) {
+                    updated[REQUIRE_EXIT_TEXT] = updated[ACTIVE] == true
+                }
+                updated.remove(LEGACY_PHRASE)
+                return updated.toPreferences()
+            }
+
+            override suspend fun cleanUp() = Unit
+        }
     }
 }

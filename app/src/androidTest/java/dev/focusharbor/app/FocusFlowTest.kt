@@ -10,6 +10,7 @@ import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.hasTestTag
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
+import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performClick
@@ -41,10 +42,11 @@ class FocusFlowTest {
     @get:Rule
     val compose = createEmptyComposeRule()
 
-    private val phrase = "I choose my attention and return to what matters now"
+    private val tenWords = "Any ten words I write should let me leave now"
     private lateinit var context: Context
     private lateinit var allowedPackage: String
     private lateinit var otherPackage: String
+    private lateinit var availablePackages: Set<String>
     private var scenario: ActivityScenario<MainActivity>? = null
 
     @Before
@@ -59,14 +61,18 @@ class FocusFlowTest {
         assertTrue("The test emulator needs at least two launchable apps", apps.size >= 2)
         allowedPackage = apps[0]
         otherPackage = apps[1]
+        availablePackages = apps.toSet()
+    }
+
+    private fun launchSession(requireExitText: Boolean) {
         runBlocking {
             context.focusDataStore.edit { it.clear() }
             assertEquals(
                 SessionMutation.STARTED,
                 FocusStore(context.focusDataStore).startSession(
                     setOf(allowedPackage),
-                    phrase,
-                    apps.toSet(),
+                    requireExitText,
+                    availablePackages,
                     System.currentTimeMillis(),
                 ),
             )
@@ -87,17 +93,8 @@ class FocusFlowTest {
 
     @Test
     fun focusHomeOnlyShowsAllowlistedApps() {
-        var catalogError = false
-        compose.waitUntil(15_000) {
-            var loaded = false
-            scenario?.onActivity {
-                val state = ViewModelProvider(it)[FocusViewModel::class.java].state.value
-                loaded = state.catalogLoaded
-                catalogError = state.catalogError
-            }
-            loaded
-        }
-        assertFalse("The app catalog could not be loaded", catalogError)
+        launchSession(true)
+        awaitAppCatalog(compose, requireNotNull(scenario))
         compose.onNodeWithTag("focus-apps")
             .performScrollToNode(hasTestTag("allowed-$allowedPackage"))
         compose.onNodeWithTag("allowed-$allowedPackage").assertIsDisplayed()
@@ -105,14 +102,17 @@ class FocusFlowTest {
     }
 
     @Test
-    fun onlyMatchingTenWordTextEndsFocus() {
+    fun anyTenOrMoreWordsEndAnOptedInSession() {
+        launchSession(true)
         compose.onNodeWithTag("leave-focus").performClick()
         compose.onNodeWithTag("confirm-exit").assertIsNotEnabled()
         compose.onNodeWithTag("exit-input")
-            .performTextInput("these ten words are not the ones I chose today")
+            .performTextInput("one two three four five six seven eight nine")
         compose.onNodeWithTag("confirm-exit").assertIsNotEnabled()
         assertTrue(runBlocking { FocusStore(context.focusDataStore).sessions.first().isActive })
-        compose.onNodeWithTag("exit-input").performTextReplacement(phrase)
+        compose.onNodeWithTag("exit-input").performTextReplacement(tenWords)
+        compose.onNodeWithTag("confirm-exit").assertIsEnabled()
+        compose.onNodeWithTag("exit-input").performTextReplacement("$tenWords today")
         compose.onNodeWithTag("confirm-exit").assertIsEnabled().performClick()
         compose.waitUntil(10_000) {
             compose.onAllNodesWithTag("start-focus").fetchSemanticsNodes().isNotEmpty()
@@ -122,6 +122,7 @@ class FocusFlowTest {
 
     @Test
     fun backDismissalAndActivityRecreationDoNotEndFocus() {
+        launchSession(true)
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         compose.waitUntil(10_000) {
             var focused = false
@@ -140,7 +141,37 @@ class FocusFlowTest {
         compose.onNodeWithTag("exit-input").assertDoesNotExist()
         scenario?.recreate()
         compose.onNodeWithTag("leave-focus").assertIsDisplayed()
-        compose.onNodeWithTag("setup-phrase").assertDoesNotExist()
-        assertTrue(runBlocking { FocusStore(context.focusDataStore).sessions.first().isActive })
+        compose.onNodeWithTag("require-exit-text").assertDoesNotExist()
+        val saved = runBlocking { FocusStore(context.focusDataStore).sessions.first() }
+        assertTrue(saved.isActive)
+        assertTrue(saved.requireExitText)
     }
+
+    @Test
+    fun optingOutEndsFocusImmediatelyWithoutShowingATextChallenge() {
+        launchSession(false)
+        compose.onNodeWithTag("leave-focus").performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithTag("start-focus").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("exit-input").assertDoesNotExist()
+        assertFalse(runBlocking { FocusStore(context.focusDataStore).sessions.first().isActive })
+    }
+}
+
+internal fun awaitAppCatalog(
+    compose: ComposeTestRule,
+    scenario: ActivityScenario<MainActivity>,
+) {
+    var catalogError = false
+    compose.waitUntil(15_000) {
+        var loaded = false
+        scenario.onActivity {
+            val state = ViewModelProvider(it)[FocusViewModel::class.java].state.value
+            loaded = state.catalogLoaded
+            catalogError = state.catalogError
+        }
+        loaded
+    }
+    assertFalse("The app catalog could not be loaded", catalogError)
 }

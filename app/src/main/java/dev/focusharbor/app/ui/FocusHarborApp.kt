@@ -90,7 +90,7 @@ import dev.focusharbor.app.FocusUiState
 import dev.focusharbor.app.FocusViewModel
 import dev.focusharbor.app.R
 import dev.focusharbor.app.apps.LaunchableApp
-import dev.focusharbor.app.focus.ExitPhrase
+import dev.focusharbor.app.focus.ExitText
 import dev.focusharbor.app.focus.FocusSession
 import java.util.Locale
 import kotlinx.coroutines.delay
@@ -104,6 +104,15 @@ fun FocusHarborApp(model: FocusViewModel) {
     var showRecovery by rememberSaveable { mutableStateOf(false) }
     var showPicker by rememberSaveable { mutableStateOf(false) }
     val active = state.session?.isActive == true
+    val requestExit: () -> Unit = {
+        if (!state.busy) {
+            if (state.session?.requireExitText == true) {
+                showExit = true
+            } else {
+                model.endFocus("")
+            }
+        }
+    }
     val homeLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { model.refresh() }
@@ -127,7 +136,7 @@ fun FocusHarborApp(model: FocusViewModel) {
         if (!active) showExit = false else showPicker = false
     }
     BackHandler(enabled = active) {
-        showExit = !showExit
+        if (showExit) showExit = false else requestExit()
     }
 
     Scaffold(
@@ -138,7 +147,7 @@ fun FocusHarborApp(model: FocusViewModel) {
             BottomBar(
                 state = state,
                 onStart = model::startFocus,
-                onExit = { showExit = true },
+                onExit = requestExit,
                 onPhone = model::openPhone,
                 onRecovery = { showRecovery = true },
             )
@@ -163,7 +172,7 @@ fun FocusHarborApp(model: FocusViewModel) {
                 else -> SetupScreen(
                     state = state,
                     onChooseHome = chooseHome,
-                    onPhraseChanged = model::setPhrase,
+                    onRequireExitText = model::setRequireExitText,
                     onChooseApps = { showPicker = true },
                     onClearSelection = model::clearSelection,
                     onSafetyAccepted = model::setSafetyAccepted,
@@ -172,16 +181,12 @@ fun FocusHarborApp(model: FocusViewModel) {
         }
     }
 
-    if (showExit && active) {
-        state.session?.let { session ->
-            ExitDialog(
-                phrase = session.exitPhrase,
-                busy = state.busy,
-                onDismiss = { showExit = false },
-                onConfirm = model::endFocus,
-                onTooLong = { model.notify(R.string.phrase_too_long) },
-            )
-        }
+    if (showExit && active && state.session?.requireExitText == true) {
+        ExitDialog(
+            busy = state.busy,
+            onDismiss = { showExit = false },
+            onConfirm = model::endFocus,
+        )
     }
     if (showRecovery) {
         AlertDialog(
@@ -238,7 +243,7 @@ private fun Brand() {
 private fun SetupScreen(
     state: FocusUiState,
     onChooseHome: () -> Unit,
-    onPhraseChanged: (String) -> Unit,
+    onRequireExitText: (Boolean) -> Unit,
     onChooseApps: () -> Unit,
     onClearSelection: () -> Unit,
     onSafetyAccepted: (Boolean) -> Unit,
@@ -279,37 +284,30 @@ private fun SetupScreen(
         }
         item {
             SectionCard {
-                Eyebrow(stringResource(R.string.step_phrase))
+                Eyebrow(stringResource(R.string.step_exit))
                 Text(
-                    stringResource(R.string.phrase_title),
+                    stringResource(R.string.exit_option_title),
                     style = MaterialTheme.typography.headlineSmall,
                 )
-                SupportingText(stringResource(R.string.phrase_description))
-                OutlinedTextField(
-                    value = state.draftPhrase,
-                    onValueChange = onPhraseChanged,
-                    modifier = Modifier.fillMaxWidth().testTag("setup-phrase"),
-                    enabled = !state.busy,
-                    label = { Text(stringResource(R.string.phrase_label)) },
-                    minLines = 2,
-                    maxLines = 5,
-                    keyboardOptions = PhraseKeyboard,
-                    supportingText = {
-                        Text(
-                            stringResource(R.string.word_counter, ExitPhrase.wordCount(state.draftPhrase)),
+                SupportingText(stringResource(R.string.exit_option_description))
+                Row(
+                    modifier = Modifier.fillMaxWidth().testTag("require-exit-text")
+                        .toggleable(
+                            value = state.draftRequireExitText,
+                            enabled = !state.busy,
+                            role = Role.Checkbox,
+                            onValueChange = onRequireExitText,
                         )
-                    },
-                    isError = state.draftPhrase.isNotEmpty() && !ExitPhrase.isValid(state.draftPhrase),
-                )
-                SupportingText(
-                    stringResource(
-                        if (ExitPhrase.isValid(state.draftPhrase)) {
-                            R.string.phrase_ready
-                        } else {
-                            R.string.phrase_hint
-                        },
-                    ),
-                )
+                        .padding(vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Checkbox(
+                        checked = state.draftRequireExitText,
+                        onCheckedChange = null,
+                        modifier = Modifier.padding(end = 10.dp),
+                    )
+                    Text(stringResource(R.string.require_exit_text))
+                }
             }
         }
         item {
@@ -423,7 +421,7 @@ private fun BottomBar(
     val active = state.session?.isActive == true
     val ready = state.session != null && !state.storageError
     val canStart = ready && !state.busy && state.defaultHome && state.catalogLoaded &&
-        !state.catalogError && state.safetyAccepted && ExitPhrase.isValid(state.draftPhrase) &&
+        !state.catalogError && state.safetyAccepted &&
         state.draftAllowed.isNotEmpty() &&
         state.apps.map { it.packageName }.containsAll(state.draftAllowed)
     Surface(tonalElevation = 2.dp) {
@@ -737,14 +735,13 @@ private fun ElapsedTime(startedAtMillis: Long) {
 
 @Composable
 private fun ExitDialog(
-    phrase: String,
     busy: Boolean,
     onDismiss: () -> Unit,
     onConfirm: (String) -> Unit,
-    onTooLong: () -> Unit,
 ) {
     var entered by remember { mutableStateOf("") }
-    val matches = ExitPhrase.matches(phrase, entered)
+    val words = ExitText.wordCount(entered)
+    val valid = words >= ExitText.MIN_WORDS
     AlertDialog(
         onDismissRequest = { if (!busy) onDismiss() },
         title = { Text(stringResource(R.string.exit_title)) },
@@ -754,40 +751,32 @@ private fun ExitDialog(
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 SupportingText(stringResource(R.string.exit_description))
-                Surface(
-                    color = MaterialTheme.colorScheme.primaryContainer,
-                    shape = RoundedCornerShape(16.dp),
-                ) {
-                    Text(
-                        phrase,
-                        modifier = Modifier.fillMaxWidth().padding(16.dp).testTag("challenge-text"),
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
-                }
                 OutlinedTextField(
                     value = entered,
-                    onValueChange = {
-                        if (it.length <= ExitPhrase.MAX_LENGTH) entered = it else onTooLong()
-                    },
+                    onValueChange = { entered = it },
                     modifier = Modifier.fillMaxWidth().testTag("exit-input"),
                     enabled = !busy,
                     label = { Text(stringResource(R.string.exit_label)) },
                     minLines = 3,
                     maxLines = 5,
-                    keyboardOptions = PhraseKeyboard,
+                    keyboardOptions = ExitKeyboard,
                     supportingText = {
-                        Text(stringResource(R.string.word_counter, ExitPhrase.wordCount(entered)))
+                        Text(
+                            pluralStringResource(
+                                R.plurals.exit_word_count, words, words, ExitText.MIN_WORDS,
+                            ),
+                        )
                     },
                 )
                 SupportingText(
-                    stringResource(if (matches) R.string.exit_match else R.string.exit_helper),
+                    stringResource(if (valid) R.string.exit_ready else R.string.exit_helper),
                 )
             }
         },
         confirmButton = {
             TextButton(
                 onClick = { onConfirm(entered) },
-                enabled = matches && !busy,
+                enabled = valid && !busy,
                 modifier = Modifier.testTag("confirm-exit"),
             ) { Text(stringResource(R.string.end_focus)) }
         },
@@ -807,7 +796,7 @@ private fun ErrorPanel(message: String, onRetry: () -> Unit, modifier: Modifier 
     }
 }
 
-private val PhraseKeyboard = KeyboardOptions(
-    capitalization = KeyboardCapitalization.None,
-    autoCorrectEnabled = false,
+private val ExitKeyboard = KeyboardOptions(
+    capitalization = KeyboardCapitalization.Sentences,
+    autoCorrectEnabled = true,
 )

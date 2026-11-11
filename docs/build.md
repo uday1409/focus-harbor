@@ -36,8 +36,8 @@ inspects the application's package ID, SDK range and packaged permissions,
 verifies its signature, and exports:
 
 ```text
-dist/focus-harbor-1.0.0-debug.apk
-dist/focus-harbor-1.0.0-debug.apk.sha256
+dist/focus-harbor-1.1.0-debug.apk
+dist/focus-harbor-1.1.0-debug.apk.sha256
 ```
 
 These are ignored generated files. The APK is debug-signed, debuggable, and
@@ -82,8 +82,8 @@ acceptance test temporarily grants the emulator's Home role and restores its
 original launcher in cleanup; it refuses physical hardware. Tests never place
 calls.
 
-Acceptance tests cover setup/start, Home-role recovery, allowlist visibility,
-incorrect/correct exit text, Back/dismissal, and activity recreation. Reports are under
+Acceptance tests cover both optional exit choices, setup/start, Home-role recovery,
+allowlist visibility, the 9/10/11-word boundary, Back/dismissal, and recreation. Reports are under
 `app/build/reports/androidTests/connected/debug`.
 Use an emulator for additional force-stop/reboot/Home-role recovery checks.
 Do not claim physical-device or OEM coverage from these tests.
@@ -91,7 +91,7 @@ Do not claim physical-device or OEM coverage from these tests.
 ## GitHub
 
 The built evaluation APK and its checksum are available in the
-[private preview release](https://github.com/uday1409/focus-harbor/releases/tag/v1.0.0-preview).
+[private preview release](https://github.com/uday1409/focus-harbor/releases/tag/v1.1.0-preview).
 Sign in to the repository owner's GitHub account to download private assets.
 
 The workflow builds an APK/checksum artifact and runs API 36 emulator tests
@@ -102,6 +102,9 @@ Headless CI uses SwiftShader with Vulkan disabled to avoid host graphics
 interoperability failures. This changes only the test emulator, not the app or
 a user's device. Failed acceptance runs retain Android window state and system
 events in the emulator-report artifact without hiding the original test failure.
+The emulator job pins Ubuntu 24.04 and uses the API 36 Google APIs image with
+four virtual cores and 4 GB RAM so cold-boot system services have sufficient
+resources. The app itself does not depend on Google Play services.
 
 After authenticating GitHub CLI to the intended personal account, publishing a
 new private repository from a local committed checkout is explicit:

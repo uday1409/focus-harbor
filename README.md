@@ -1,15 +1,15 @@
 # Focus Harbor
 
 A calm, offline Android Home launcher with a custom app allowlist and an
-intentional ten-word exit challenge. Inspired by distraction-free spaces, built
+optional ten-or-more-word exit challenge. Inspired by distraction-free spaces, built
 without root, device-admin locks, accessibility interception, or a backend.
 
 **Important:** this limits your Home screen, not Android itself. Notifications,
 Recents, settings, links, or another app can still reach other apps. Normal
-in-app exit requires your text; OS recovery and uninstall deliberately remain
+in-app exit follows your pre-session word-challenge choice; OS recovery and uninstall remain
 possible. It is not a tamper-proof version of OnePlus Zen Space.
 
-**Download:** [Evaluation APK and SHA-256 checksum](https://github.com/uday1409/focus-harbor/releases/tag/v1.0.0-preview).
+**Download:** [Evaluation APK and SHA-256 checksum](https://github.com/uday1409/focus-harbor/releases/tag/v1.1.0-preview).
 This is a private release; sign in to GitHub to access it.
 
 ## Use it
@@ -17,15 +17,18 @@ This is a private release; sign in to GitHub to access it.
 1. Manually install the evaluation APK after reviewing
    [safety and recovery](docs/safety-and-recovery.md). Android 8.0+ is required.
 2. Open **Focus Harbor**, tap **Set as Home**, and select it in Android's chooser.
-3. Choose your own text of exactly **10 words** and select at least one app with
-   **Choose / open apps**. Phone access is available separately.
+3. Select at least one app with **Choose / open apps**. Optionally enable
+   **Require 10+ words to leave focus**. It is off by default; your choice is
+   remembered and can be changed before the next session. Phone access is separate.
 4. Read the safety note, accept it, and tap **Enter focus**.
-5. To return to setup, tap **Leave focus**, retype the displayed text, and tap
-   **End focus**. Case and punctuation must match; extra whitespace is ignored.
+5. Tap **Leave focus** to return to setup. With the challenge off, exit is
+   immediate. With it on, write **any text with at least 10 words** and tap
+   **End focus**. Exactly 10 words or any larger number is accepted; no text
+   needs to match a preset.
 
 Focus persists when the launcher is recreated or reopened. Configuration is
 locked during an active session. There is no timer-based auto-exit.
-The text is visible, locally stored friction, not a password; do not use secrets.
+Entered exit text is not saved and is not a password; do not use secrets.
 
 To restore your original launcher, use Android **Settings > Apps > Default apps >
 Home app**. You can uninstall Focus Harbor at any time through Android.

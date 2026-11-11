@@ -6,6 +6,8 @@ Read `specs/focus-mode.md` before changing behavior. Relevant runbooks are in
 
 This is an offline, reversible Android Home launcher. Never add device-admin,
 root, accessibility interception, overlays, VPNs, or system-wide blocking.
-Keep the matching 10-word normal exit check inside the atomic DataStore edit.
+Keep the optional 10-or-more-word exit check inside the atomic DataStore edit.
+Any wording is valid; never match a preset or persist entered exit text.
+An unchecked pre-session option permits immediate exit without text.
 Keep active configuration immutable and surface persistence/launch errors.
 Only run connected tests on a dedicated emulator, never an unspecified device.

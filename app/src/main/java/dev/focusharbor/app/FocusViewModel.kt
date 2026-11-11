@@ -16,7 +16,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.focusharbor.app.apps.AppCatalog
 import dev.focusharbor.app.apps.LaunchableApp
-import dev.focusharbor.app.focus.ExitPhrase
 import dev.focusharbor.app.focus.FocusSession
 import dev.focusharbor.app.focus.FocusStore
 import dev.focusharbor.app.focus.SessionMutation
@@ -39,7 +38,7 @@ data class FocusUiState(
     val storageError: Boolean = false,
     val defaultHome: Boolean = false,
     val draftAllowed: Set<String> = emptySet(),
-    val draftPhrase: String = "",
+    val draftRequireExitText: Boolean = false,
     val safetyAccepted: Boolean = false,
     val query: String = "",
     val busy: Boolean = false,
@@ -74,7 +73,11 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
                         session = session,
                         storageError = false,
                         draftAllowed = if (initializeDraft) session.allowedPackages else it.draftAllowed,
-                        draftPhrase = if (initializeDraft) session.exitPhrase else it.draftPhrase,
+                        draftRequireExitText = if (initializeDraft) {
+                            session.requireExitText
+                        } else {
+                            it.draftRequireExitText
+                        },
                         safetyAccepted = if (initializeDraft) false else it.safetyAccepted,
                     )
                 }
@@ -104,13 +107,8 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
         mutableState.update { it.copy(catalogError = true, catalogLoaded = true) }
     }
 
-    fun setPhrase(phrase: String) {
-        if (!canEdit()) return
-        if (phrase.length > ExitPhrase.MAX_LENGTH) {
-            notify(R.string.phrase_too_long)
-        } else {
-            mutableState.update { it.copy(draftPhrase = phrase) }
-        }
+    fun setRequireExitText(required: Boolean) {
+        if (canEdit()) mutableState.update { it.copy(draftRequireExitText = required) }
     }
 
     fun toggleApp(packageName: String) {
@@ -163,16 +161,16 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
         mutate {
             store.startSession(
                 allowedPackages = current.draftAllowed,
-                phrase = current.draftPhrase,
+                requireExitText = current.draftRequireExitText,
                 availablePackages = current.apps.map { it.packageName }.toSet(),
                 nowMillis = System.currentTimeMillis(),
             )
         }
     }
 
-    fun endFocus(enteredPhrase: String) {
+    fun endFocus(enteredText: String) {
         if (state.value.busy) return
-        mutate { store.endSession(enteredPhrase) }
+        mutate { store.endSession(enteredText) }
     }
 
     private fun mutate(action: suspend () -> SessionMutation) {
@@ -184,10 +182,9 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
                     SessionMutation.STARTED, SessionMutation.ENDED -> null
                     SessionMutation.ALREADY_ACTIVE -> R.string.already_active
                     SessionMutation.NOT_ACTIVE -> R.string.not_active
-                    SessionMutation.INVALID_PHRASE -> R.string.phrase_invalid
                     SessionMutation.NO_ALLOWED_APPS -> R.string.select_apps
                     SessionMutation.APPS_UNAVAILABLE -> R.string.apps_unavailable
-                    SessionMutation.INCORRECT_PHRASE -> R.string.phrase_mismatch
+                    SessionMutation.EXIT_TEXT_TOO_SHORT -> R.string.exit_text_too_short
                 }
                 mutableState.update { it.copy(message = message) }
             } catch (error: IOException) {

@@ -31,7 +31,8 @@ clearing storage, safe mode, and uninstall can bypass that screen. Selected apps
 can open other apps. Work/private profiles and other users are not managed.
 The UI explains this before each session can start.
 
-The 10-word text is visible and stored in app-private plaintext. It introduces
+The optional challenge accepts any text with at least 10 words. There is no
+preset or matching requirement, and entered text is not saved. It introduces
 intentional friction, not secrecy or adversarial lockout. Do not enter a password,
 financial information, private personal data, or sensitive work information.
 Keyboard/assistive input and paste are not cryptographically distinguishable from
@@ -39,10 +40,17 @@ manual typing.
 
 ## Normal exit
 
-Tap **Leave focus**, re-enter the displayed ten-word text, and tap **End focus**.
-Match case and punctuation. Extra spaces, tabs, and line breaks are normalized.
-Focus setup becomes editable again. Focus Harbor remains your Home app until
-you change Android's Home selection.
+Before starting, optionally enable **Require 10+ words to leave focus**.
+The option is off by default, remembered between sessions, and locked while active.
+Tap **Leave focus**: if the option is off, the session ends immediately. If it is
+on, write any text with at least 10 words and tap **End focus**. Exactly 10 and
+longer texts are accepted; case, wording, and punctuation do not need to match
+anything. Punctuation-only tokens do not count as words.
+Focus setup then becomes editable again. Focus Harbor remains your Home app
+until you change Android's Home selection.
+
+On upgrade, an already-active old session retains the word-count challenge,
+but its custom phrase is removed and no longer needs to be remembered or matched.
 
 ## Recovery without cooperating with the app
 
