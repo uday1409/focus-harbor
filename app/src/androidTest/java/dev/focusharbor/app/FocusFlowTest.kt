@@ -17,6 +17,7 @@ import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
 import androidx.datastore.preferences.core.edit
+import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -86,6 +87,17 @@ class FocusFlowTest {
 
     @Test
     fun focusHomeOnlyShowsAllowlistedApps() {
+        var catalogError = false
+        compose.waitUntil(15_000) {
+            var loaded = false
+            scenario?.onActivity {
+                val state = ViewModelProvider(it)[FocusViewModel::class.java].state.value
+                loaded = state.catalogLoaded
+                catalogError = state.catalogError
+            }
+            loaded
+        }
+        assertFalse("The app catalog could not be loaded", catalogError)
         compose.onNodeWithTag("focus-apps")
             .performScrollToNode(hasTestTag("allowed-$allowedPackage"))
         compose.onNodeWithTag("allowed-$allowedPackage").assertIsDisplayed()
