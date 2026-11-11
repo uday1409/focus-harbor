@@ -34,6 +34,12 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    testOptions {
+        unitTests.all { test ->
+            test.systemProperty("robolectric.dependency.repo.url", "https://repo.maven.apache.org/maven2")
+        }
+    }
+
     lint {
         warningsAsErrors = true
         abortOnError = true

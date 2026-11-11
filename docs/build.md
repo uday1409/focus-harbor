@@ -24,6 +24,9 @@ $env:ANDROID_HOME = Join-Path $tools 'android-sdk'
 ```
 
 For another machine, point those variables at your own JDK 17 and Android SDK.
+Robolectric's SDK artifacts use the canonical Maven Central endpoint
+`repo.maven.apache.org`; this avoids `repo1.maven.org` rate limits on hosted
+runners without changing the pinned test SDK or skipping tests.
 
 ## One-command checks and APK export
 
