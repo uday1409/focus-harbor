@@ -5,8 +5,8 @@
 - JDK 17 (`JAVA_HOME`).
 - Android SDK (`ANDROID_HOME`), platform 36, Build Tools 35.0.0, platform-tools.
 - PowerShell 7 for the cross-platform artifact/check script.
-- For UI acceptance: a dedicated Android API 36 x86_64 emulator with at least two
-  launchable system apps. Hardware virtualization is recommended.
+- For UI acceptance: a dedicated Android API 35 or 36 x86_64 emulator with at
+  least two launchable system apps. Hardware virtualization is recommended.
 
 Use Android Studio's SDK Manager to install the SDK components or your supported
 Android command-line tools. The repository does not download tools into source,
@@ -97,7 +97,7 @@ The built evaluation APK and its checksum are available in the
 [private preview release](https://github.com/uday1409/focus-harbor/releases/tag/v1.1.0-preview).
 Sign in to the repository owner's GitHub account to download private assets.
 
-The workflow builds an APK/checksum artifact and runs API 36 emulator tests
+The workflow builds an APK/checksum artifact and runs API 35 emulator tests
 on pushes to `main` and manual dispatch. Pull requests run the JVM/lint/build
 job without the heavier emulator job. CI uses immutable action commit pins,
 read-only repository permissions, and no signing secret.
@@ -105,10 +105,11 @@ Headless CI uses SwiftShader with Vulkan disabled to avoid host graphics
 interoperability failures. This changes only the test emulator, not the app or
 a user's device. Failed acceptance runs retain Android window state and system
 events in the emulator-report artifact without hiding the original test failure.
-The emulator job pins Ubuntu 24.04 and uses the API 36 Google APIs image with
-four virtual cores, 4 GB RAM, and a bounded 2 GB userdata partition so cold-boot
-services have sufficient resources without exhausting hosted-runner disk space.
-The app itself does not depend on Google Play services.
+The emulator job pins Ubuntu 24.04 and uses an API 35 AOSP Pixel 2 image with two
+virtual cores, 2 GB RAM, and a bounded 2 GB userdata partition. This fits standard
+hosted-runner resources without depending on Google services. The same six UI
+cases are also validated locally on Android 16/API 36; CI provides additional
+Android 15/API 35 coverage. Compile/target SDK remains 36, and no UI test is skipped.
 
 After authenticating GitHub CLI to the intended personal account, publishing a
 new private repository from a local committed checkout is explicit:

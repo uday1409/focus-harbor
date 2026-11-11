@@ -67,12 +67,12 @@ jobs:
       - name: Run Android acceptance tests
         uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2
         with:
-          api-level: 36
-          target: google_apis
+          api-level: 35
+          target: default
           arch: x86_64
-          profile: pixel_6
-          cores: 4
-          ram-size: 4096M
+          profile: pixel_2
+          cores: 2
+          ram-size: 2048M
           disk-size: 2048M
           disable-animations: true
           emulator-options: -no-window -gpu swiftshader -feature -Vulkan -no-audio -no-boot-anim -no-snapshot -no-metrics
