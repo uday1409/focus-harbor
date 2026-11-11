@@ -101,7 +101,7 @@ The workflow builds an APK/checksum artifact and runs API 35 emulator tests
 on pushes to `main` and manual dispatch. Pull requests run the JVM/lint/build
 job without the heavier emulator job. CI uses immutable action commit pins,
 read-only repository permissions, and no signing secret.
-Headless CI uses SwiftShader with Vulkan disabled to avoid host graphics
+Headless CI uses emulator-managed software rendering with Vulkan disabled to avoid host graphics
 interoperability failures. This changes only the test emulator, not the app or
 a user's device. Failed acceptance runs retain Android window state and system
 events in the emulator-report artifact without hiding the original test failure.

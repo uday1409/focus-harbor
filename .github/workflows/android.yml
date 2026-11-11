@@ -75,7 +75,7 @@ jobs:
           ram-size: 2048M
           disk-size: 2048M
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader -feature -Vulkan -no-audio -no-boot-anim -no-snapshot -no-metrics
+          emulator-options: -no-window -gpu software -feature -Vulkan -no-audio -no-boot-anim -no-snapshot -no-metrics
           script: >-
             ./gradlew --no-daemon --console=plain :app:connectedDebugAndroidTest ||
             { status=$?; mkdir -p app/build/reports/emulator-diagnostics;
