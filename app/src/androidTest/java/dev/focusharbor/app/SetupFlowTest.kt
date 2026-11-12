@@ -4,7 +4,6 @@ import android.app.role.RoleManager
 import android.content.Context
 import android.content.pm.LauncherApps
 import android.os.Build
-import android.os.ParcelFileDescriptor
 import android.os.Process
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
@@ -27,12 +26,12 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
-import androidx.test.platform.app.InstrumentationRegistry
 import dev.focusharbor.app.focus.FocusStore
 import dev.focusharbor.app.focus.FocusSession
 import dev.focusharbor.app.focus.AndroidFocusClock
 import dev.focusharbor.app.focus.remainingMillis
 import dev.focusharbor.app.focus.focusDataStore
+import dev.focusharbor.app.home.NormalLauncherCatalog
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -92,8 +91,12 @@ class SetupFlowTest {
     fun userCanOptInBeforeFocusAndAndroidCanRestoreHome() {
         val session = configureAndStart(true)
         assertTrue(session.requireExitText)
+        // Android can create a separate Home task; recreate the scenario-owned activity first.
         scenario?.recreate()
         compose.onNodeWithTag("leave-focus").assertIsDisplayed()
+        emulatorShell("input keyevent KEYCODE_HOME")
+        compose.onNodeWithTag("leave-focus").assertIsDisplayed()
+        assertTrue(runBlocking { FocusStore(context.focusDataStore).sessions.first().isActive })
     }
 
     @Test
@@ -101,10 +104,10 @@ class SetupFlowTest {
         val session = configureAndStart(false)
         assertFalse(session.requireExitText)
         compose.onNodeWithTag("leave-focus").performClick()
-        compose.waitUntil(10_000) {
-            compose.onAllNodesWithTag("start-focus").fetchSemanticsNodes().isNotEmpty()
-        }
+        val target = runBlocking { requireNotNull(FocusStore(context.focusDataStore).states.first().normalLauncher) }
+        awaitNormalLauncher(compose, target.packageName)
         assertFalse(runBlocking { FocusStore(context.focusDataStore).sessions.first().isActive })
+        assertTrue(context.getSystemService(RoleManager::class.java).isRoleHeld(RoleManager.ROLE_HOME))
     }
 
     @Test
@@ -115,6 +118,7 @@ class SetupFlowTest {
             .filter { it != context.packageName }
             .distinct()
         assertTrue(apps.size >= 2)
+        chooseNormalLauncher()
         chooseApp(apps[0])
         selectPreset("study")
         chooseApp(apps[1])
@@ -157,6 +161,34 @@ class SetupFlowTest {
         awaitModel(compose, requireNotNull(scenario)) { !it.busy && it.presets.size == 4 }
     }
 
+    @Test
+    fun idleHomeForwardsToTheSavedLauncherButTheAppIconStillOpensSetup() {
+        chooseNormalLauncher()
+        val target = runBlocking { requireNotNull(FocusStore(context.focusDataStore).states.first().normalLauncher) }
+        assertTrue(target.packageName != context.packageName)
+        scenario?.recreate()
+        awaitModel(compose, requireNotNull(scenario)) { it.normalLauncher == target }
+        emulatorShell("input keyevent KEYCODE_HOME")
+        awaitNormalLauncher(compose, target.packageName)
+        assertTrue(context.getSystemService(RoleManager::class.java).isRoleHeld(RoleManager.ROLE_HOME))
+        openFocusSetup(compose, context)
+        compose.onNodeWithTag("normal-launcher-dialog").assertDoesNotExist()
+        compose.onNodeWithTag("start-focus").assertIsDisplayed()
+        emulatorShell("input keyevent KEYCODE_HOME")
+        awaitNormalLauncher(compose, target.packageName)
+        assertFalse(runBlocking { FocusStore(context.focusDataStore).sessions.first().isActive })
+        assertEquals(target, runBlocking { FocusStore(context.focusDataStore).states.first().normalLauncher })
+    }
+
+    private fun chooseNormalLauncher() {
+        compose.onNodeWithTag("setup-list").performScrollToNode(hasTestTag("choose-normal-launcher"))
+        compose.onNodeWithTag("choose-normal-launcher").performClick()
+        awaitModel(compose, requireNotNull(scenario)) { it.launcherCatalogLoaded && !it.launcherCatalogError }
+        val target = NormalLauncherCatalog(context).load().first().target
+        compose.onNodeWithTag("normal-launcher-${target.packageName}/${target.className}").performClick()
+        awaitModel(compose, requireNotNull(scenario)) { !it.busy && it.normalLauncher == target }
+    }
+
     private fun selectPreset(id: String) {
         compose.onNodeWithTag("setup-list").performScrollToNode(hasTestTag("preset-selector"))
         compose.onNodeWithTag("preset-selector").performClick()
@@ -181,6 +213,7 @@ class SetupFlowTest {
             .first { it.componentName.packageName != context.packageName }
             .componentName.packageName
         compose.onNodeWithTag("start-focus").assertIsNotEnabled()
+        chooseNormalLauncher()
         compose.onNodeWithTag("setup-list")
             .performScrollToNode(hasTestTag("require-exit-text"))
         compose.onNodeWithTag("require-exit-text").assertIsOff()
@@ -210,10 +243,7 @@ class SetupFlowTest {
         return session
     }
 
-    private fun shell(command: String): String =
-        ParcelFileDescriptor.AutoCloseInputStream(
-            InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command),
-        ).bufferedReader().use { it.readText() }
+    private fun shell(command: String): String = emulatorShell(command)
 
     private companion object {
         val PackageName = Regex("[a-zA-Z0-9_]+(?:\\.[a-zA-Z0-9_]+)+")

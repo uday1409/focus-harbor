@@ -1,6 +1,8 @@
 package dev.focusharbor.app.ui
 
 import android.content.ActivityNotFoundException
+import android.content.Intent
+import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -105,6 +107,7 @@ fun FocusHarborApp(model: FocusViewModel) {
     var showExit by rememberSaveable { mutableStateOf(false) }
     var showRecovery by rememberSaveable { mutableStateOf(false) }
     var showPicker by rememberSaveable { mutableStateOf(false) }
+    var showLauncherPicker by rememberSaveable { mutableStateOf(false) }
     val active = state.session?.isActive == true
     val requestExit: () -> Unit = {
         if (!state.busy) {
@@ -118,14 +121,19 @@ fun FocusHarborApp(model: FocusViewModel) {
     val homeLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { model.refresh() }
-    val chooseHome: () -> Unit = {
+    val launchHomeSelection: (Intent) -> Unit = { intent ->
         try {
-            homeLauncher.launch(model.homeSelectionIntent())
+            homeLauncher.launch(intent)
         } catch (_: ActivityNotFoundException) {
             model.notify(R.string.home_open_error)
         } catch (_: SecurityException) {
             model.notify(R.string.home_open_error)
         }
+    }
+    val chooseHome: () -> Unit = { launchHomeSelection(model.homeSelectionIntent()) }
+    val closeLauncherPicker: () -> Unit = {
+        showLauncherPicker = false
+        model.dismissLauncherRecovery()
     }
 
     LaunchedEffect(state.message) {
@@ -135,7 +143,12 @@ fun FocusHarborApp(model: FocusViewModel) {
         }
     }
     LaunchedEffect(active) {
-        if (!active) showExit = false else showPicker = false
+        if (!active) {
+            showExit = false
+        } else {
+            showPicker = false
+            showLauncherPicker = false
+        }
     }
     BackHandler(enabled = active) {
         if (showExit) showExit = false else requestExit()
@@ -186,6 +199,8 @@ fun FocusHarborApp(model: FocusViewModel) {
                     onPresetDelete = model::deletePreset,
                     onIntention = model::setIntention,
                     onDuration = model::setDuration,
+                    onChooseNormalLauncher = { showLauncherPicker = true; model.refreshLaunchers() },
+                    onOpenNormalLauncher = model::requestNormalHome,
                 )
             }
         }
@@ -223,6 +238,24 @@ fun FocusHarborApp(model: FocusViewModel) {
             onToggle = model::toggleApp,
             onOpen = model::launchApp,
             onRetry = model::refresh,
+        )
+    }
+    if ((showLauncherPicker || state.launcherRecovery) && !active &&
+        state.session != null && !state.storageError
+    ) {
+        NormalLauncherDialog(
+            state = state,
+            onSelect = {
+                showLauncherPicker = false
+                model.selectNormalLauncher(it, openAfterSave = state.launcherRecovery)
+            },
+            onDismiss = closeLauncherPicker,
+            onRetry = model::refreshLaunchers,
+            onHomeSettings = {
+                closeLauncherPicker()
+                launchHomeSelection(Intent(Settings.ACTION_HOME_SETTINGS))
+            },
+            onRecovery = { closeLauncherPicker(); showRecovery = true },
         )
     }
 }
@@ -263,6 +296,8 @@ private fun SetupScreen(
     onPresetDelete: () -> Unit,
     onIntention: (String) -> Unit,
     onDuration: (Int?) -> Unit,
+    onChooseNormalLauncher: () -> Unit,
+    onOpenNormalLauncher: () -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.testTag("setup-list"),
@@ -282,6 +317,7 @@ private fun SetupScreen(
         item {
             PresetSection(state, onPresetSelect, onPresetCreate, onPresetRename, onPresetDelete)
         }
+        item { NormalLauncherSection(state, onChooseNormalLauncher, onOpenNormalLauncher) }
         item {
             SectionCard {
                 Eyebrow(stringResource(R.string.step_home))
@@ -442,6 +478,8 @@ private fun BottomBar(
     val ready = state.session != null && !state.storageError
     val canStart = ready && !state.busy && state.defaultHome && state.catalogLoaded &&
         !state.catalogError && state.safetyAccepted &&
+        state.launcherCatalogLoaded && !state.launcherCatalogError &&
+        state.normalLauncher != null && state.normalLaunchers.any { it.target == state.normalLauncher } &&
         state.selectedPresetId != null &&
         state.draftIntention.trim().length <= FocusStore.MAX_INTENTION_LENGTH &&
         FocusStore.validDuration(state.draftDurationMinutes) &&

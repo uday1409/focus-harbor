@@ -5,6 +5,8 @@ MainActivity
   -> Compose UI (FocusHarborApp)
   -> FocusViewModel (immutable StateFlow)
        -> AppCatalog -> Android LauncherApps, current user only
+       -> NormalLauncherCatalog -> current-profile exported Home activities
+       -> HomeRequest -> resumed MainActivity -> explicit normal-Home intent
        -> FocusStore -> Preferences DataStore, atomic edit
             -> ExitText (pure Kotlin word counting)
             -> FocusPreset / FocusPlan / FocusTime (local configuration and timing)
@@ -14,6 +16,25 @@ MainActivity
 Home role nor modifies other applications. A user-initiated Android role chooser
 (API 29+) or Home settings screen (API 26-28) performs that selection.
 The role is rechecked on resume and immediately before starting a session.
+An inactive Home intent is distinct from app-icon entry. `onNewIntent` updates
+the single-task activity's intent so Home can forward while the app icon still
+opens setup, including after recreation.
+
+`NormalLauncherCatalog` uses a narrow `MAIN`/`HOME` package-visibility query.
+It excludes this package, disabled/unexported activities and inaccessible
+permission-protected components. The user explicitly chooses a package/activity
+once; DataStore saves it separately from presets and rejects edits during focus.
+Legacy sessions with no choice are not reset or blocked from normal exit.
+
+Only a successful `ENDED` result schedules an exit handoff. Home requests also
+re-read the persisted session, re-query the target, then recheck idle state after
+the query. The resumed activity consumes each request once before launching the
+explicit external Home component. Unknown storage, active focus, failed exit
+writes and stale requests never forward. No handoff is triggered by mere resume.
+A short monotonic handoff guard stops rapid launcher bounce loops; errors pause
+automatic retries until explicit selection/retry. Missing/denied Home targets
+show launcher selection and recovery without changing the saved ended state.
+Android's default Home role is not reassigned, and components are never disabled.
 
 `AppCatalog` uses `LauncherApps.getActivityList` for the current user, excludes
 this app, deduplicates packages, loads Android-provided labels/icons off the main
@@ -41,7 +62,7 @@ support is logged explicitly and uses the epoch fallback. Time reaching zero is
 derived state, not an exit mutation. Keep going changes only the deadline after
 the current timer expires; it retains the original start, apps, intention and
 exit choice. UI ticking stops while Home is not visible; no alarms, services,
-notifications, app launches, or extra permissions are involved.
+notifications, automatic app launches, or extra permissions are involved.
 
 The DataStore migration removes legacy custom phrases. An active legacy session
 retains a word-count gate, without requiring its old phrase. Idle legacy settings

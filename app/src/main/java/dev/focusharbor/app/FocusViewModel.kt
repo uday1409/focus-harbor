@@ -23,11 +23,17 @@ import dev.focusharbor.app.focus.FocusPlan
 import dev.focusharbor.app.focus.FocusPreset
 import dev.focusharbor.app.focus.SessionMutation
 import dev.focusharbor.app.focus.focusDataStore
+import dev.focusharbor.app.home.HomeHandoffGuard
+import dev.focusharbor.app.home.HomeRequest
+import dev.focusharbor.app.home.LauncherTarget
+import dev.focusharbor.app.home.NormalLauncher
+import dev.focusharbor.app.home.NormalLauncherCatalog
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -39,6 +45,12 @@ data class FocusUiState(
     val catalogError: Boolean = false,
     val storageError: Boolean = false,
     val defaultHome: Boolean = false,
+    val normalLauncher: LauncherTarget? = null,
+    val normalLaunchers: List<NormalLauncher> = emptyList(),
+    val launcherCatalogLoaded: Boolean = false,
+    val launcherCatalogError: Boolean = false,
+    val launcherRecovery: Boolean = false,
+    @param:StringRes val launcherError: Int? = null,
     val draftAllowed: Set<String> = emptySet(),
     val draftRequireExitText: Boolean = false,
     val presets: List<FocusPreset> = emptyList(),
@@ -54,11 +66,18 @@ data class FocusUiState(
 class FocusViewModel(application: Application) : AndroidViewModel(application) {
     private val store = FocusStore(application.focusDataStore)
     private val catalog = AppCatalog(application)
+    private val launcherCatalog = NormalLauncherCatalog(application)
     private val clock = AndroidFocusClock(application)
+    private val handoffGuard = HomeHandoffGuard()
     private val mutableState = MutableStateFlow(FocusUiState())
     val state = mutableState.asStateFlow()
+    private val mutableHomeRequests = MutableStateFlow<HomeRequest?>(null)
+    val homeRequests = mutableHomeRequests.asStateFlow()
+    private var nextHomeRequestId = 0L
+    private var automaticHandoffBlocked = false
     private var storageJob: Job? = null
     private var catalogJob: Job? = null
+    private var launcherJob: Job? = null
 
     init {
         retryStorage()
@@ -87,6 +106,7 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
                         val selected = saved.presets.firstOrNull { preset -> preset.id == saved.selectedPresetId }
                         it.copy(
                             session = session,
+                            normalLauncher = saved.normalLauncher,
                             presets = saved.presets,
                             selectedPresetId = saved.selectedPresetId,
                             storageError = false,
@@ -157,6 +177,7 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refresh() {
         mutableState.update { it.copy(defaultHome = isDefaultHome()) }
+        refreshLaunchers()
         if (catalogJob?.isActive == true) return
         catalogJob = viewModelScope.launch {
             try {
@@ -175,6 +196,121 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
     private fun catalogFailed(error: RuntimeException) {
         Log.e(TAG, "Unable to load launchable apps in the current Android profile.", error)
         mutableState.update { it.copy(catalogError = true, catalogLoaded = true) }
+    }
+
+    fun refreshLaunchers() {
+        if (launcherJob?.isActive == true) return
+        launcherJob = viewModelScope.launch {
+            try {
+                val launchers = withContext(Dispatchers.IO) { launcherCatalog.load() }
+                mutableState.update {
+                    it.copy(normalLaunchers = launchers, launcherCatalogLoaded = true, launcherCatalogError = false)
+                }
+            } catch (error: SecurityException) {
+                launcherCatalogFailed(error)
+            } catch (error: Resources.NotFoundException) {
+                launcherCatalogFailed(error)
+            }
+        }
+    }
+
+    private fun launcherCatalogFailed(error: RuntimeException) {
+        Log.e(TAG, "Unable to discover normal Home launchers in the current Android profile.", error)
+        mutableState.update {
+            it.copy(launcherCatalogLoaded = true, launcherCatalogError = true, launcherError = R.string.launcher_catalog_error)
+        }
+    }
+
+    fun selectNormalLauncher(target: LauncherTarget, openAfterSave: Boolean) {
+        if (!canEdit()) return
+        if (state.value.launcherCatalogError || state.value.normalLaunchers.none { it.target == target }) {
+            showLauncherRecovery(R.string.normal_launcher_unavailable)
+            refreshLaunchers()
+            return
+        }
+        mutate(onSaved = {
+            automaticHandoffBlocked = false
+            mutableState.update { it.copy(launcherRecovery = false, launcherError = null) }
+            if (openAfterSave) requestNormalHome()
+        }) { store.saveNormalLauncher(target) }
+    }
+
+    fun acceptEntryIntent(intent: Intent) {
+        if (intent.action == Intent.ACTION_MAIN && intent.hasCategory(Intent.CATEGORY_HOME) &&
+            !intent.hasCategory(Intent.CATEGORY_LAUNCHER)
+        ) {
+            enqueueHomeRequest(automatic = true)
+        } else {
+            mutableHomeRequests.value = null
+            handoffGuard.reset()
+            mutableState.update { it.copy(launcherRecovery = false) }
+        }
+    }
+
+    fun requestNormalHome() {
+        automaticHandoffBlocked = false
+        enqueueHomeRequest(automatic = false)
+    }
+
+    private fun enqueueHomeRequest(automatic: Boolean) {
+        mutableHomeRequests.value = HomeRequest(++nextHomeRequestId, automatic)
+    }
+
+    suspend fun resolveHomeRequest(request: HomeRequest): LauncherTarget? {
+        if (mutableHomeRequests.value != request) return null
+        try {
+            if (store.states.first().session.isActive || state.value.busy) return null
+            if (request.automatic && automaticHandoffBlocked) {
+                showLauncherRecovery(state.value.launcherError ?: R.string.normal_launcher_open_error)
+                return null
+            }
+            val launchers = withContext(Dispatchers.IO) { launcherCatalog.load() }
+            val saved = store.states.first()
+            if (saved.session.isActive || state.value.busy) return null
+            mutableState.update {
+                it.copy(normalLaunchers = launchers, launcherCatalogLoaded = true, launcherCatalogError = false)
+            }
+            val target = saved.normalLauncher
+            return when {
+                target == null -> {
+                    showLauncherRecovery(R.string.normal_launcher_required)
+                    null
+                }
+                launchers.none { it.target == target } -> {
+                    showLauncherRecovery(R.string.normal_launcher_unavailable)
+                    null
+                }
+                else -> target
+            }
+        } catch (error: IOException) {
+            Log.e(TAG, "Unable to verify the saved session before returning to normal Home.", error)
+            mutableState.update { it.copy(storageError = true) }
+        } catch (error: SecurityException) {
+            launcherCatalogFailed(error)
+            showLauncherRecovery(R.string.launcher_catalog_error)
+        } catch (error: Resources.NotFoundException) {
+            launcherCatalogFailed(error)
+            showLauncherRecovery(R.string.launcher_catalog_error)
+        }
+        return null
+    }
+
+    fun consumeHomeRequest(request: HomeRequest): Boolean {
+        if (mutableHomeRequests.value != request) return false
+        mutableHomeRequests.value = null
+        return true
+    }
+
+    fun allowHomeHandoff(request: HomeRequest): Boolean =
+        handoffGuard.allow(clock.now().elapsedRealtimeMillis, request.automatic)
+
+    fun showLauncherRecovery(@StringRes message: Int) {
+        automaticHandoffBlocked = true
+        mutableState.update { it.copy(launcherRecovery = true, launcherError = message) }
+    }
+
+    fun dismissLauncherRecovery() {
+        mutableState.update { it.copy(launcherRecovery = false) }
     }
 
     fun setRequireExitText(required: Boolean) {
@@ -231,6 +367,16 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
             notify(R.string.catalog_error)
             return
         }
+        if (!current.launcherCatalogLoaded || current.launcherCatalogError) {
+            showLauncherRecovery(R.string.launcher_catalog_error)
+            return
+        }
+        if (current.normalLauncher == null || current.normalLaunchers.none { it.target == current.normalLauncher }) {
+            showLauncherRecovery(
+                if (current.normalLauncher == null) R.string.normal_launcher_required else R.string.normal_launcher_unavailable,
+            )
+            return
+        }
         mutate {
             store.startSession(
                 allowedPackages = current.draftAllowed,
@@ -251,11 +397,13 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
         mutate { store.endSession(enteredText) }
     }
 
-    private fun mutate(action: suspend () -> SessionMutation) {
+    private fun mutate(onSaved: () -> Unit = {}, action: suspend () -> SessionMutation) {
         mutableState.update { it.copy(busy = true) }
         viewModelScope.launch {
+            var outcome: SessionMutation? = null
             try {
                 val result = action()
+                outcome = result
                 val message = when (result) {
                     SessionMutation.STARTED, SessionMutation.ENDED,
                     SessionMutation.CONFIGURATION_SAVED, SessionMutation.EXTENDED -> null
@@ -278,6 +426,15 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
                 notify(R.string.storage_write_error)
             } finally {
                 mutableState.update { it.copy(busy = false) }
+            }
+            when (outcome) {
+                SessionMutation.STARTED -> {
+                    mutableHomeRequests.value = null
+                    mutableState.update { it.copy(launcherRecovery = false, launcherError = null) }
+                }
+                SessionMutation.ENDED -> requestNormalHome()
+                SessionMutation.CONFIGURATION_SAVED -> onSaved()
+                else -> Unit
             }
         }
     }

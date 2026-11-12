@@ -46,11 +46,25 @@ Tap **Leave focus**: if the option is off, the session ends immediately. If it i
 on, write any text with at least 10 words and tap **End focus**. Exactly 10 and
 longer texts are accepted; case, wording, and punctuation do not need to match
 anything. Punctuation-only tokens do not count as words.
-Focus setup then becomes editable again. Focus Harbor remains your Home app
-until you change Android's Home selection.
+After the exit is saved, your chosen normal launcher opens directly. Home
+gestures also open that launcher while focus is off. Open the **Focus Harbor
+app icon** to edit setup or start another session.
+
+Choose your normal launcher once in setup; it can be your stock launcher or
+another installed Home app. This choice is saved locally, not in each preset,
+and is locked while focus is active. If it is unavailable after exiting, focus
+stays off and a launcher-selection/recovery dialog appears. It never silently
+chooses another package or restarts focus. Failed/repeated handoffs stop instead
+of automatically retrying on resume.
+
+Forwarding Home is not changing the default Home app in Android. Focus Harbor
+remains the default until you change Android's Home selection yourself. No
+launcher component is disabled and no default is silently reassigned.
 
 On upgrade, an already-active old session retains the word-count challenge,
 but its custom phrase is removed and no longer needs to be remembered or matched.
+An active session upgraded without a normal-launcher choice can still end
+normally, then choose a launcher or use Android recovery.
 
 ## Presets, intentions, and timed sessions
 
@@ -65,7 +79,8 @@ and is never uploaded or logged. Do not enter sensitive information.
 Timed sessions never auto-exit or launch another app. Finish and Keep going
 appear when you are on or return to Home. Finish still follows your chosen
 optional 10+ word challenge; "What do you need your phone for?" changes only the
-question, not that rule. Keep going adds time or becomes open-ended explicitly.
+question, not that rule. A successful Finish returns to the chosen normal Home,
+just like Leave focus. Keep going adds time or becomes open-ended explicitly.
 No background reminders, exact alarms, notifications, breaks, DND changes, or
 interference with system alarms is included.
 

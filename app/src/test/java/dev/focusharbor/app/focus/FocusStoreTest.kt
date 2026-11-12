@@ -1,14 +1,17 @@
 package dev.focusharbor.app.focus
 
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.CorruptionException
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.PreferencesFileSerializer
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.mutablePreferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
+import dev.focusharbor.app.home.LauncherTarget
 import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
@@ -164,11 +167,50 @@ class FocusStoreTest {
                 ): Preferences = throw IOException("disk unavailable")
             },
         )
+        val operations = listOf<suspend () -> SessionMutation>(
+            { failingStore.startSession(apps, true, apps, FocusTime(1)) },
+            { failingStore.endSession(text) },
+            { failingStore.saveNormalLauncher(LauncherTarget("example.home", "example.home.Home")) },
+        )
+        for (operation in operations) {
+            try {
+                operation()
+                fail("A failed write must not report a successful change")
+            } catch (_: IOException) {
+                // The caller must surface the failure; there is no success-shaped fallback.
+            }
+        }
+    }
+
+    @Test
+    fun normalLauncherChoiceIsLockedDuringFocusAndSurvivesExit() = runTest {
+        val preferences = dataStore(backgroundScope)
+        val store = FocusStore(preferences)
+        val target = LauncherTarget("example.home", "example.home.Home")
+        val other = LauncherTarget("example.other", "example.other.Home")
+        assertEquals(SessionMutation.CONFIGURATION_SAVED, store.saveNormalLauncher(target))
+        store.startSession(apps, true, apps, FocusTime(123))
+        assertEquals(SessionMutation.ALREADY_ACTIVE, store.saveNormalLauncher(other))
+        assertEquals(target, FocusStore(preferences).states.first().normalLauncher)
+        assertEquals(SessionMutation.EXIT_TEXT_TOO_SHORT, store.endSession("too short"))
+        assertTrue(store.states.first().session.isActive)
+        assertEquals(SessionMutation.ENDED, store.endSession(text))
+        val ended = FocusStore(preferences).states.first()
+        assertFalse(ended.session.isActive)
+        assertEquals(target, ended.normalLauncher)
+        assertEquals(SessionMutation.CONFIGURATION_SAVED, store.saveNormalLauncher(other))
+        assertEquals(other, store.states.first().normalLauncher)
+    }
+
+    @Test
+    fun incompleteLauncherSettingsAreNotTreatedAsAnIdleDefault() = runTest {
+        val preferences = dataStore(backgroundScope)
+        preferences.edit { it[stringPreferencesKey("normal_launcher_package")] = "example.home" }
         try {
-            failingStore.startSession(apps, true, apps, FocusTime(1))
-            fail("A failed write must not report a started session")
-        } catch (_: IOException) {
-            // The caller must surface the failure; there is no success-shaped fallback.
+            FocusStore(preferences).states.first()
+            fail("Partial launcher settings must be reported as corrupt")
+        } catch (_: CorruptionException) {
+            assertEquals("example.home", preferences.data.first()[stringPreferencesKey("normal_launcher_package")])
         }
     }
 

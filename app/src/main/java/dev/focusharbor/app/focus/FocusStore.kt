@@ -11,6 +11,7 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
+import dev.focusharbor.app.home.LauncherTarget
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.util.Locale
@@ -35,6 +36,7 @@ data class FocusState(
     val presets: List<FocusPreset> = emptyList(),
     val selectedPresetId: String? = null,
     val lastDurationMinutes: Int? = null,
+    val normalLauncher: LauncherTarget? = null,
 )
 
 data class FocusPlan(
@@ -76,9 +78,28 @@ class FocusStore(private val dataStore: DataStore<Preferences>) {
         if (ids != null && (ids.isEmpty() || selected !in ids)) {
             throw CorruptionException("The selected saved preset is unavailable.")
         }
-        FocusState(preferences.toSession(), presets, selected, preferences[LAST_DURATION])
+        val launcherPackage = preferences[NORMAL_LAUNCHER_PACKAGE]
+        val launcherClass = preferences[NORMAL_LAUNCHER_CLASS]
+        val normalLauncher = if (launcherPackage == null && launcherClass == null) {
+            null
+        } else {
+            if (launcherPackage.isNullOrBlank() || launcherClass.isNullOrBlank()) {
+                throw CorruptionException("The saved normal launcher is incomplete.")
+            }
+            LauncherTarget(launcherPackage, launcherClass)
+        }
+        FocusState(preferences.toSession(), presets, selected, preferences[LAST_DURATION], normalLauncher)
     }
     val sessions: Flow<FocusSession> = states.map { it.session }
+
+    suspend fun saveNormalLauncher(target: LauncherTarget): SessionMutation {
+        require(target.packageName.isNotBlank() && target.className.isNotBlank())
+        return configure { preferences ->
+            preferences[NORMAL_LAUNCHER_PACKAGE] = target.packageName
+            preferences[NORMAL_LAUNCHER_CLASS] = target.className
+            SessionMutation.CONFIGURATION_SAVED
+        }
+    }
 
     suspend fun initializePresets(defaults: List<FocusPreset>) {
         require(defaults.isNotEmpty() && defaults.map { it.id }.distinct().size == defaults.size)
@@ -307,6 +328,8 @@ class FocusStore(private val dataStore: DataStore<Preferences>) {
         private val DEADLINE_EPOCH = longPreferencesKey("deadline_epoch_millis")
         private val DEADLINE_ELAPSED = longPreferencesKey("deadline_elapsed_millis")
         private val DEADLINE_BOOT = intPreferencesKey("deadline_boot_count")
+        private val NORMAL_LAUNCHER_PACKAGE = stringPreferencesKey("normal_launcher_package")
+        private val NORMAL_LAUNCHER_CLASS = stringPreferencesKey("normal_launcher_class")
         private fun presetNameKey(id: String) = stringPreferencesKey("preset_name_$id")
         private fun presetAppsKey(id: String) = stringSetPreferencesKey("preset_apps_$id")
 

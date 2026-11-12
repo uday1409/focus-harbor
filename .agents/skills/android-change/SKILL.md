@@ -15,6 +15,10 @@ compatibility: JDK 17 and Android SDK platform 36 with Build Tools 35.0.0; a ded
    inside `FocusStore`'s atomic edits. Enabled means any 10 or more words;
    disabled means immediate exit. Never match a preset, save entered text, or
    let active-session callbacks change the stored choice.
+   A successful saved exit can hand off to the chosen normal Home launcher.
+   Never hand off on a rejected/failed exit, an active Home intent, or unknown
+   storage. Preserve app-icon setup access, validate the external Home target,
+   keep Android's default Home unchanged, and stop automatic handoff loops.
 4. Update the smallest implementation and regression tests. Follow existing
    Compose state and Android resource patterns. Do not introduce new privileged
    permissions or background monitors.
