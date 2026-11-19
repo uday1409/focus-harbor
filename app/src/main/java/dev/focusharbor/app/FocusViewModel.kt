@@ -23,8 +23,6 @@ import dev.focusharbor.app.focus.FocusSession
 import dev.focusharbor.app.focus.FocusStore
 import dev.focusharbor.app.focus.SessionMutation
 import dev.focusharbor.app.focus.focusDataStore
-import dev.focusharbor.app.guard.FocusAppGuardService
-import dev.focusharbor.app.guard.FocusGuardSignals
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -44,12 +42,9 @@ data class FocusUiState(
     val catalogError: Boolean = false,
     val storageError: Boolean = false,
     val defaultHome: Boolean = false,
-    val appGuardServiceEnabled: Boolean = false,
-    val batteryUnrestricted: Boolean = false,
     val draftAllowed: Set<String> = emptySet(),
     val draftRequireExitText: Boolean = false,
-    val draftOpenHomeOnExit: Boolean = true,
-    val draftStrictAppGuard: Boolean = false,
+    val draftOpenHomeOnExit: Boolean = false,
     val presets: List<FocusPreset> = emptyList(),
     val selectedPresetId: String? = null,
     val draftIntention: String = "",
@@ -74,15 +69,6 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         retryStorage()
-        viewModelScope.launch {
-            var previous = FocusGuardSignals.blockedCount.value
-            FocusGuardSignals.blockedCount.collect { count ->
-                if (count > previous) {
-                    previous = count
-                    notify(R.string.app_guard_blocked)
-                }
-            }
-        }
     }
 
     fun retryStorage() {
@@ -125,11 +111,6 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
                                 session.openHomeOnExit
                             } else {
                                 it.draftOpenHomeOnExit
-                            },
-                            draftStrictAppGuard = if (initializeDraft) {
-                                session.strictAppGuard
-                            } else {
-                                it.draftStrictAppGuard
                             },
                             draftIntention = if (initializeDraft) "" else it.draftIntention,
                             draftDurationMinutes = if (initializeDraft) saved.lastDurationMinutes else it.draftDurationMinutes,
@@ -188,14 +169,7 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun refresh() {
-        val context = getApplication<Application>()
-        mutableState.update {
-            it.copy(
-                defaultHome = isDefaultHome(),
-                appGuardServiceEnabled = FocusAppGuardService.isEnabled(context),
-                batteryUnrestricted = FocusAppGuardService.isBatteryUnrestricted(context),
-            )
-        }
+        mutableState.update { it.copy(defaultHome = isDefaultHome()) }
         if (catalogJob?.isActive == true) return
         catalogJob = viewModelScope.launch {
             try {
@@ -237,25 +211,6 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
                 store.saveOpenHomeOnExit(enabled)
             } catch (error: IOException) {
                 Log.e(TAG, "Unable to save the exit Home-switcher preference.", error)
-            }
-        }
-    }
-
-    fun setStrictAppGuard(enabled: Boolean) {
-        if (!canEdit()) return
-        val context = getApplication<Application>()
-        mutableState.update {
-            it.copy(
-                draftStrictAppGuard = enabled,
-                appGuardServiceEnabled = FocusAppGuardService.isEnabled(context),
-                batteryUnrestricted = FocusAppGuardService.isBatteryUnrestricted(context),
-            )
-        }
-        viewModelScope.launch {
-            try {
-                store.saveStrictAppGuard(enabled)
-            } catch (error: IOException) {
-                Log.e(TAG, "Unable to save the Strict App Guard preference.", error)
             }
         }
     }
@@ -318,10 +273,6 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
             notify(R.string.catalog_error)
             return
         }
-        if (current.draftStrictAppGuard && !FocusAppGuardService.isEnabled(getApplication())) {
-            mutableState.update { it.copy(appGuardServiceEnabled = false, message = R.string.app_guard_required) }
-            return
-        }
         mutate {
             store.startSession(
                 allowedPackages = current.draftAllowed,
@@ -333,7 +284,6 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
                     intention = current.draftIntention,
                     durationMinutes = current.draftDurationMinutes,
                     openHomeOnExit = current.draftOpenHomeOnExit,
-                    strictAppGuard = current.draftStrictAppGuard,
                 ),
             )
         }

@@ -1,6 +1,5 @@
 package dev.focusharbor.app
 
-import android.app.UiAutomation
 import android.content.Context
 import android.content.pm.LauncherApps
 import android.os.Build
@@ -283,13 +282,9 @@ internal fun awaitModel(
     }
 }
 
-internal fun emulatorUiAutomation(): UiAutomation =
-    InstrumentationRegistry.getInstrumentation()
-        .getUiAutomation(UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES)
-
 internal fun emulatorShell(command: String): String {
     check(Build.HARDWARE == "ranchu") { "Test shell commands are limited to the dedicated emulator" }
     return ParcelFileDescriptor.AutoCloseInputStream(
-        emulatorUiAutomation().executeShellCommand(command),
+        InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command),
     ).bufferedReader().use { it.readText() }
 }

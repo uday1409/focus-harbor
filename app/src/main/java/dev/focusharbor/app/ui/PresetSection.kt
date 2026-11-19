@@ -1,12 +1,14 @@
 package dev.focusharbor.app.ui
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.FilterChip
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -20,12 +22,10 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.focusharbor.app.FocusUiState
 import dev.focusharbor.app.R
@@ -42,6 +42,7 @@ internal fun PresetSection(
     onClearSelection: () -> Unit,
 ) {
     val selected = state.presets.firstOrNull { it.id == state.selectedPresetId }
+    var menu by rememberSaveable { mutableStateOf(false) }
     var editing by rememberSaveable { mutableStateOf<String?>(null) }
     var name by rememberSaveable { mutableStateOf("") }
     var deleting by rememberSaveable { mutableStateOf(false) }
@@ -49,15 +50,25 @@ internal fun PresetSection(
         Eyebrow(stringResource(R.string.step_apps))
         Text(stringResource(R.string.apps_title), style = MaterialTheme.typography.headlineSmall)
         SupportingText(stringResource(R.string.apps_description))
-        ChipWrapRow(modifier = Modifier.fillMaxWidth().testTag("preset-selector")) {
-            state.presets.forEach { preset ->
-                FilterChip(
-                    selected = preset.id == state.selectedPresetId,
-                    onClick = { if (preset.id != state.selectedPresetId) onSelect(preset.id) },
-                    enabled = !state.busy,
-                    label = { Text(preset.name) },
-                    modifier = Modifier.testTag("preset-option-${preset.id}"),
-                )
+        Box {
+            OutlinedButton(
+                onClick = { menu = true },
+                enabled = !state.busy && selected != null,
+                modifier = Modifier.fillMaxWidth().testTag("preset-selector"),
+            ) {
+                Text(selected?.name.orEmpty())
+            }
+            DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+                state.presets.forEach { preset ->
+                    DropdownMenuItem(
+                        text = { Text(preset.name) },
+                        onClick = {
+                            menu = false
+                            onSelect(preset.id)
+                        },
+                        modifier = Modifier.testTag("preset-option-${preset.id}"),
+                    )
+                }
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -173,41 +184,5 @@ internal fun PresetSection(
                 TextButton(onClick = { deleting = false }) { Text(stringResource(R.string.cancel)) }
             },
         )
-    }
-}
-
-@Composable
-internal fun ChipWrapRow(
-    modifier: Modifier = Modifier,
-    horizontalGap: Dp = 8.dp,
-    verticalGap: Dp = 6.dp,
-    content: @Composable () -> Unit,
-) {
-    Layout(content = content, modifier = modifier) { measurables, constraints ->
-        val hGap = horizontalGap.roundToPx()
-        val vGap = verticalGap.roundToPx()
-        val childConstraints = constraints.copy(minWidth = 0, minHeight = 0)
-        val placeables = measurables.map { it.measure(childConstraints) }
-        var x = 0
-        var y = 0
-        var rowHeight = 0
-        val positions = ArrayList<Pair<Int, Int>>(placeables.size)
-        for (placeable in placeables) {
-            if (x > 0 && x + placeable.width > constraints.maxWidth) {
-                x = 0
-                y += rowHeight + vGap
-                rowHeight = 0
-            }
-            positions.add(x to y)
-            x += placeable.width + hGap
-            if (placeable.height > rowHeight) rowHeight = placeable.height
-        }
-        val totalHeight = if (placeables.isEmpty()) 0 else y + rowHeight
-        layout(constraints.maxWidth, totalHeight) {
-            placeables.forEachIndexed { index, placeable ->
-                val (px, py) = positions[index]
-                placeable.placeRelative(px, py)
-            }
-        }
     }
 }

@@ -169,7 +169,6 @@ class FocusStoreTest {
             { failingStore.endSession(text) },
             { failingStore.saveSafetyAccepted(true) },
             { failingStore.saveOpenHomeOnExit(true) },
-            { failingStore.saveStrictAppGuard(true) },
         )
         for (operation in operations) {
             try {
@@ -196,12 +195,10 @@ class FocusStoreTest {
     }
 
     @Test
-    fun openHomeOnExitDefaultsTrueSnapshotsLocksWhileActiveAndRemembersPreference() = runTest {
+    fun openHomeOnExitOptionSnapshotsLocksWhileActiveAndRemembersPreference() = runTest {
         val preferences = dataStore(backgroundScope)
         val store = FocusStore(preferences)
-        assertTrue(store.sessions.first().openHomeOnExit)
-        assertEquals(SessionMutation.CONFIGURATION_SAVED, store.saveOpenHomeOnExit(false))
-        assertFalse(FocusStore(preferences).sessions.first().openHomeOnExit)
+        assertFalse(store.sessions.first().openHomeOnExit)
         assertEquals(SessionMutation.CONFIGURATION_SAVED, store.saveOpenHomeOnExit(true))
         assertTrue(FocusStore(preferences).sessions.first().openHomeOnExit)
         store.startSession(apps, true, apps, FocusTime(123), FocusPlan(openHomeOnExit = true))
@@ -213,22 +210,6 @@ class FocusStoreTest {
         val after = FocusStore(preferences).sessions.first()
         assertFalse(after.isActive)
         assertTrue(after.openHomeOnExit)
-    }
-
-    @Test
-    fun strictAppGuardSnapshotsLocksWhileActiveAndRemembersPreference() = runTest {
-        val preferences = dataStore(backgroundScope)
-        val store = FocusStore(preferences)
-        assertFalse(store.sessions.first().strictAppGuard)
-        assertEquals(SessionMutation.CONFIGURATION_SAVED, store.saveStrictAppGuard(true))
-        assertTrue(FocusStore(preferences).sessions.first().strictAppGuard)
-        store.startSession(apps, false, apps, FocusTime(123), FocusPlan(strictAppGuard = true))
-        assertEquals(SessionMutation.ALREADY_ACTIVE, store.saveStrictAppGuard(false))
-        assertTrue(store.sessions.first().strictAppGuard)
-        assertEquals(SessionMutation.ENDED, store.endSession(""))
-        val after = FocusStore(preferences).sessions.first()
-        assertFalse(after.isActive)
-        assertTrue(after.strictAppGuard)
     }
 
     @Test
