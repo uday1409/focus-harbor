@@ -16,13 +16,10 @@ boundary, or system-wide app blocker. Read `specs/focus-mode.md` and
   any text with at least 10 words permits exit; no preset exit text or match is required.
   When disabled, exit immediately. Enforce the stored choice atomically in DataStore.
 - An active session's exit choice and allowlist cannot be edited or overwritten.
-- Save a user-chosen normal launcher locally; never silently change Android's
-  default Home, disable launcher components, or guess a replacement launcher.
-- Return to that launcher only after a successful saved exit or an inactive Home
-  intent. Never forward while focus is active, storage is unknown, or saving fails.
-  App-icon entry must still open setup while idle. Revalidate the external Home
-  component, exclude this package, and stop failed/repeated handoff loops with
-  visible launcher selection and recovery; never retry just because of resume.
+- Never proxy or forward idle `CATEGORY_HOME` intents to another launcher; use
+  Android's standard user-controlled Home role/settings chooser instead.
+- System Back on Focus Home must never end an active session or finish the
+  launcher activity; Back only dismisses an open exit dialog.
 - Presets are local app selections. Editing a preset must never rewrite an
   active snapshot. Keep at least one preset and preserve legacy selections.
 - Intentions are optional, local to an active session, and removed on exit.
@@ -42,7 +39,6 @@ boundary, or system-wide app blocker. Read `specs/focus-mode.md` and
 
 - `app/src/main/java/dev/focusharbor/app/focus`: text policy and atomic storage.
 - `app/src/main/java/dev/focusharbor/app/apps`: current-profile launcher catalog.
-- `app/src/main/java/dev/focusharbor/app/home`: normal Home discovery and handoff guard.
 - `FocusViewModel.kt`: Android integration, lifecycle refresh, explicit errors.
 - `app/src/main/java/dev/focusharbor/app/ui`: Compose UI and exit challenge.
 - `app/src/test`: text/state regression tests.

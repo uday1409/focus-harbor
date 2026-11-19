@@ -107,7 +107,7 @@ fun FocusHarborApp(model: FocusViewModel) {
     var showExit by rememberSaveable { mutableStateOf(false) }
     var showRecovery by rememberSaveable { mutableStateOf(false) }
     var showPicker by rememberSaveable { mutableStateOf(false) }
-    var showLauncherPicker by rememberSaveable { mutableStateOf(false) }
+    var pendingStartAfterHome by rememberSaveable { mutableStateOf(false) }
     val active = state.session?.isActive == true
     val requestExit: () -> Unit = {
         if (!state.busy) {
@@ -120,21 +120,26 @@ fun FocusHarborApp(model: FocusViewModel) {
     }
     val homeLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
-    ) { model.refresh() }
-    val launchHomeSelection: (Intent) -> Unit = { intent ->
+    ) {
+        val startAfter = pendingStartAfterHome
+        pendingStartAfterHome = false
+        model.onHomeSelectionResult(startIfDefaultHome = startAfter)
+    }
+    val launchHomeSelection: (Intent, Boolean) -> Unit = { intent, startAfter ->
+        pendingStartAfterHome = startAfter
         try {
             homeLauncher.launch(intent)
         } catch (_: ActivityNotFoundException) {
+            pendingStartAfterHome = false
             model.notify(R.string.home_open_error)
         } catch (_: SecurityException) {
+            pendingStartAfterHome = false
             model.notify(R.string.home_open_error)
         }
     }
-    val chooseHome: () -> Unit = { launchHomeSelection(model.homeSelectionIntent()) }
-    val closeLauncherPicker: () -> Unit = {
-        showLauncherPicker = false
-        model.dismissLauncherRecovery()
-    }
+    val chooseHome: () -> Unit = { launchHomeSelection(model.homeSelectionIntent(), false) }
+    val switchNormalHome: () -> Unit = { launchHomeSelection(Intent(Settings.ACTION_HOME_SETTINGS), false) }
+    val setHomeAndStart: () -> Unit = { launchHomeSelection(model.homeSelectionIntent(), true) }
 
     LaunchedEffect(state.message) {
         state.message?.let {
@@ -147,11 +152,11 @@ fun FocusHarborApp(model: FocusViewModel) {
             showExit = false
         } else {
             showPicker = false
-            showLauncherPicker = false
+            pendingStartAfterHome = false
         }
     }
     BackHandler(enabled = active) {
-        if (showExit) showExit = false else requestExit()
+        if (showExit) showExit = false
     }
 
     Scaffold(
@@ -162,6 +167,7 @@ fun FocusHarborApp(model: FocusViewModel) {
             BottomBar(
                 state = state,
                 onStart = model::startFocus,
+                onSetHomeAndStart = setHomeAndStart,
                 onExit = requestExit,
                 onPhone = model::openPhone,
                 onRecovery = { showRecovery = true },
@@ -189,6 +195,7 @@ fun FocusHarborApp(model: FocusViewModel) {
                 else -> SetupScreen(
                     state = state,
                     onChooseHome = chooseHome,
+                    onSwitchNormalHome = switchNormalHome,
                     onRequireExitText = model::setRequireExitText,
                     onChooseApps = { showPicker = true },
                     onClearSelection = model::clearSelection,
@@ -199,8 +206,6 @@ fun FocusHarborApp(model: FocusViewModel) {
                     onPresetDelete = model::deletePreset,
                     onIntention = model::setIntention,
                     onDuration = model::setDuration,
-                    onChooseNormalLauncher = { showLauncherPicker = true; model.refreshLaunchers() },
-                    onOpenNormalLauncher = model::requestNormalHome,
                 )
             }
         }
@@ -240,24 +245,6 @@ fun FocusHarborApp(model: FocusViewModel) {
             onRetry = model::refresh,
         )
     }
-    if ((showLauncherPicker || state.launcherRecovery) && !active &&
-        state.session != null && !state.storageError
-    ) {
-        NormalLauncherDialog(
-            state = state,
-            onSelect = {
-                showLauncherPicker = false
-                model.selectNormalLauncher(it, openAfterSave = state.launcherRecovery)
-            },
-            onDismiss = closeLauncherPicker,
-            onRetry = model::refreshLaunchers,
-            onHomeSettings = {
-                closeLauncherPicker()
-                launchHomeSelection(Intent(Settings.ACTION_HOME_SETTINGS))
-            },
-            onRecovery = { closeLauncherPicker(); showRecovery = true },
-        )
-    }
 }
 
 @Composable
@@ -286,6 +273,7 @@ private fun Brand() {
 private fun SetupScreen(
     state: FocusUiState,
     onChooseHome: () -> Unit,
+    onSwitchNormalHome: () -> Unit,
     onRequireExitText: (Boolean) -> Unit,
     onChooseApps: () -> Unit,
     onClearSelection: () -> Unit,
@@ -296,17 +284,15 @@ private fun SetupScreen(
     onPresetDelete: () -> Unit,
     onIntention: (String) -> Unit,
     onDuration: (Int?) -> Unit,
-    onChooseNormalLauncher: () -> Unit,
-    onOpenNormalLauncher: () -> Unit,
 ) {
     LazyColumn(
         modifier = Modifier.testTag("setup-list"),
         contentPadding = PaddingValues(24.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         item { Brand() }
         item {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
                     stringResource(R.string.setup_heading),
                     style = MaterialTheme.typography.displaySmall,
@@ -314,122 +300,81 @@ private fun SetupScreen(
                 SupportingText(stringResource(R.string.setup_description))
             }
         }
-        item {
-            PresetSection(state, onPresetSelect, onPresetCreate, onPresetRename, onPresetDelete)
-        }
-        item { NormalLauncherSection(state, onChooseNormalLauncher, onOpenNormalLauncher) }
-        item {
-            SectionCard {
-                Eyebrow(stringResource(R.string.step_home))
-                Text(
-                    stringResource(
-                        if (state.defaultHome) R.string.home_ready else R.string.home_title,
-                    ),
-                    style = MaterialTheme.typography.headlineSmall,
-                )
-                SupportingText(stringResource(R.string.home_description))
-                OutlinedButton(onClick = onChooseHome, enabled = !state.busy) {
+        if (state.defaultHome) {
+            item {
+                SectionCard {
+                    Eyebrow(stringResource(R.string.step_home))
                     Text(
-                        stringResource(
-                            if (state.defaultHome) R.string.home_settings else R.string.set_home,
-                        ),
+                        stringResource(R.string.home_ready),
+                        style = MaterialTheme.typography.headlineSmall,
                     )
+                    SupportingText(stringResource(R.string.switch_home_description))
+                    OutlinedButton(
+                        onClick = onSwitchNormalHome,
+                        enabled = !state.busy,
+                        modifier = Modifier.fillMaxWidth().testTag("switch-normal-home"),
+                    ) {
+                        Text(stringResource(R.string.home_settings))
+                    }
                 }
             }
         }
-        item { SessionOptions(state, onIntention, onDuration) }
         item {
-            SectionCard {
-                Eyebrow(stringResource(R.string.step_exit))
-                Text(
-                    stringResource(R.string.exit_option_title),
-                    style = MaterialTheme.typography.headlineSmall,
-                )
-                SupportingText(stringResource(R.string.exit_option_description))
+            PresetSection(
+                state = state,
+                onSelect = onPresetSelect,
+                onCreate = onPresetCreate,
+                onRename = onPresetRename,
+                onDelete = onPresetDelete,
+                onChooseApps = onChooseApps,
+                onClearSelection = onClearSelection,
+            )
+        }
+        item { SessionOptions(state, onIntention, onDuration, onRequireExitText) }
+        if (!state.defaultHome) {
+            item {
+                SectionCard {
+                    Eyebrow(stringResource(R.string.step_home))
+                    Text(
+                        stringResource(R.string.home_title),
+                        style = MaterialTheme.typography.headlineSmall,
+                    )
+                    SupportingText(stringResource(R.string.home_description))
+                    OutlinedButton(
+                        onClick = onChooseHome,
+                        enabled = !state.busy,
+                        modifier = Modifier.fillMaxWidth().testTag("set-home"),
+                    ) {
+                        Text(stringResource(R.string.set_home))
+                    }
+                }
+            }
+        }
+        if (state.showSafetyPrompt) {
+            item {
                 Row(
-                    modifier = Modifier.fillMaxWidth().testTag("require-exit-text")
+                    modifier = Modifier.fillMaxWidth()
+                        .testTag("safety-ack")
                         .toggleable(
-                            value = state.draftRequireExitText,
+                            value = state.safetyAccepted,
                             enabled = !state.busy,
                             role = Role.Checkbox,
-                            onValueChange = onRequireExitText,
+                            onValueChange = onSafetyAccepted,
                         )
                         .padding(vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                    verticalAlignment = Alignment.Top,
                 ) {
                     Checkbox(
-                        checked = state.draftRequireExitText,
+                        checked = state.safetyAccepted,
                         onCheckedChange = null,
                         modifier = Modifier.padding(end = 10.dp),
                     )
-                    Text(stringResource(R.string.require_exit_text))
-                }
-            }
-        }
-        item {
-            SectionCard {
-                Eyebrow(stringResource(R.string.step_apps))
-                Text(
-                    stringResource(R.string.apps_title),
-                    style = MaterialTheme.typography.headlineSmall,
-                )
-                SupportingText(stringResource(R.string.apps_description))
-                Text(
-                    pluralStringResource(
-                        R.plurals.selected_count, state.draftAllowed.size, state.draftAllowed.size,
-                    ),
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.SemiBold,
-                )
-                val selected = state.apps.filter { it.packageName in state.draftAllowed }
-                if (selected.isNotEmpty()) {
-                    SupportingText(selected.joinToString { it.label })
-                }
-                if (state.catalogLoaded && selected.size < state.draftAllowed.size) {
                     Text(
-                        stringResource(R.string.missing_apps),
-                        color = MaterialTheme.colorScheme.error,
+                        stringResource(R.string.safety_acknowledgment),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    OutlinedButton(onClick = onChooseApps, enabled = !state.busy) {
-                        Text(stringResource(R.string.choose_apps))
-                    }
-                    if (state.draftAllowed.isNotEmpty()) {
-                        TextButton(onClick = onClearSelection, enabled = !state.busy) {
-                            Text(stringResource(R.string.clear_selection))
-                        }
-                    }
-                }
-            }
-        }
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth()
-                    .testTag("safety-ack")
-                    .toggleable(
-                        value = state.safetyAccepted,
-                        enabled = !state.busy,
-                        role = Role.Checkbox,
-                        onValueChange = onSafetyAccepted,
-                    )
-                    .padding(vertical = 8.dp),
-                verticalAlignment = Alignment.Top,
-            ) {
-                Checkbox(
-                    checked = state.safetyAccepted,
-                    onCheckedChange = null,
-                    modifier = Modifier.padding(end = 10.dp),
-                )
-                Text(
-                    stringResource(R.string.safety_acknowledgment),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
         }
     }
@@ -470,16 +415,15 @@ internal fun SupportingText(text: String) {
 private fun BottomBar(
     state: FocusUiState,
     onStart: () -> Unit,
+    onSetHomeAndStart: () -> Unit,
     onExit: () -> Unit,
     onPhone: () -> Unit,
     onRecovery: () -> Unit,
 ) {
     val active = state.session?.isActive == true
     val ready = state.session != null && !state.storageError
-    val canStart = ready && !state.busy && state.defaultHome && state.catalogLoaded &&
+    val setupReady = ready && !state.busy && state.catalogLoaded &&
         !state.catalogError && state.safetyAccepted &&
-        state.launcherCatalogLoaded && !state.launcherCatalogError &&
-        state.normalLauncher != null && state.normalLaunchers.any { it.target == state.normalLauncher } &&
         state.selectedPresetId != null &&
         state.draftIntention.trim().length <= FocusStore.MAX_INTENTION_LENGTH &&
         FocusStore.validDuration(state.draftDurationMinutes) &&
@@ -494,8 +438,12 @@ private fun BottomBar(
         ) {
             if (ready) {
                 Button(
-                    onClick = if (active) onExit else onStart,
-                    enabled = if (active) !state.busy else canStart,
+                    onClick = when {
+                        active -> onExit
+                        state.defaultHome -> onStart
+                        else -> onSetHomeAndStart
+                    },
+                    enabled = if (active) !state.busy else setupReady,
                     modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)
                         .testTag(if (active) "leave-focus" else "start-focus"),
                     shape = RoundedCornerShape(16.dp),
@@ -508,11 +456,25 @@ private fun BottomBar(
                         )
                         Spacer(Modifier.width(10.dp))
                     }
-                    Text(stringResource(if (active) R.string.leave_focus else R.string.start_focus))
-                }
-                if (!active && !canStart) {
                     Text(
-                        stringResource(R.string.start_requirements),
+                        stringResource(
+                            when {
+                                active -> R.string.leave_focus
+                                state.defaultHome -> R.string.start_focus
+                                else -> R.string.set_home_and_start_focus
+                            },
+                        ),
+                    )
+                }
+                if (!active && !setupReady) {
+                    val hint = when {
+                        state.draftAllowed.isEmpty() && !state.safetyAccepted -> R.string.start_requirements
+                        state.draftAllowed.isEmpty() -> R.string.select_apps
+                        !state.safetyAccepted -> R.string.safety_required
+                        else -> R.string.start_requirements
+                    }
+                    Text(
+                        stringResource(hint),
                         style = MaterialTheme.typography.labelSmall,
                         textAlign = TextAlign.Center,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,

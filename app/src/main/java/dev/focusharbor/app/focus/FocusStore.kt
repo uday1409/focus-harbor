@@ -11,7 +11,6 @@ import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
-import dev.focusharbor.app.home.LauncherTarget
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import java.util.Locale
@@ -36,7 +35,7 @@ data class FocusState(
     val presets: List<FocusPreset> = emptyList(),
     val selectedPresetId: String? = null,
     val lastDurationMinutes: Int? = null,
-    val normalLauncher: LauncherTarget? = null,
+    val safetyAccepted: Boolean = false,
 )
 
 data class FocusPlan(
@@ -78,27 +77,19 @@ class FocusStore(private val dataStore: DataStore<Preferences>) {
         if (ids != null && (ids.isEmpty() || selected !in ids)) {
             throw CorruptionException("The selected saved preset is unavailable.")
         }
-        val launcherPackage = preferences[NORMAL_LAUNCHER_PACKAGE]
-        val launcherClass = preferences[NORMAL_LAUNCHER_CLASS]
-        val normalLauncher = if (launcherPackage == null && launcherClass == null) {
-            null
-        } else {
-            if (launcherPackage.isNullOrBlank() || launcherClass.isNullOrBlank()) {
-                throw CorruptionException("The saved normal launcher is incomplete.")
-            }
-            LauncherTarget(launcherPackage, launcherClass)
-        }
-        FocusState(preferences.toSession(), presets, selected, preferences[LAST_DURATION], normalLauncher)
+        FocusState(
+            preferences.toSession(),
+            presets,
+            selected,
+            preferences[LAST_DURATION],
+            preferences[SAFETY_ACCEPTED] ?: false,
+        )
     }
     val sessions: Flow<FocusSession> = states.map { it.session }
 
-    suspend fun saveNormalLauncher(target: LauncherTarget): SessionMutation {
-        require(target.packageName.isNotBlank() && target.className.isNotBlank())
-        return configure { preferences ->
-            preferences[NORMAL_LAUNCHER_PACKAGE] = target.packageName
-            preferences[NORMAL_LAUNCHER_CLASS] = target.className
-            SessionMutation.CONFIGURATION_SAVED
-        }
+    suspend fun saveSafetyAccepted(accepted: Boolean): SessionMutation = configure { preferences ->
+        preferences[SAFETY_ACCEPTED] = accepted
+        SessionMutation.CONFIGURATION_SAVED
     }
 
     suspend fun initializePresets(defaults: List<FocusPreset>) {
@@ -214,6 +205,7 @@ class FocusStore(private val dataStore: DataStore<Preferences>) {
                 else -> {
                     preferences[ALLOWED] = allowedPackages.toSet()
                     preferences[REQUIRE_EXIT_TEXT] = requireExitText
+                    preferences[SAFETY_ACCEPTED] = true
                     preferences[STARTED_AT] = now.epochMillis
                     preferences[INTENTION] = plan.intention.trim()
                     plan.presetId?.let { id ->
@@ -328,14 +320,17 @@ class FocusStore(private val dataStore: DataStore<Preferences>) {
         private val DEADLINE_EPOCH = longPreferencesKey("deadline_epoch_millis")
         private val DEADLINE_ELAPSED = longPreferencesKey("deadline_elapsed_millis")
         private val DEADLINE_BOOT = intPreferencesKey("deadline_boot_count")
-        private val NORMAL_LAUNCHER_PACKAGE = stringPreferencesKey("normal_launcher_package")
-        private val NORMAL_LAUNCHER_CLASS = stringPreferencesKey("normal_launcher_class")
+        private val SAFETY_ACCEPTED = booleanPreferencesKey("safety_accepted")
+        private val LEGACY_NORMAL_LAUNCHER_PACKAGE = stringPreferencesKey("normal_launcher_package")
+        private val LEGACY_NORMAL_LAUNCHER_CLASS = stringPreferencesKey("normal_launcher_class")
         private fun presetNameKey(id: String) = stringPreferencesKey("preset_name_$id")
         private fun presetAppsKey(id: String) = stringSetPreferencesKey("preset_apps_$id")
 
         val exitPolicyMigration: DataMigration<Preferences> = object : DataMigration<Preferences> {
             override suspend fun shouldMigrate(currentData: Preferences): Boolean =
                 currentData.contains(LEGACY_PHRASE) ||
+                    currentData.contains(LEGACY_NORMAL_LAUNCHER_PACKAGE) ||
+                    currentData.contains(LEGACY_NORMAL_LAUNCHER_CLASS) ||
                     (currentData[ACTIVE] == true && !currentData.contains(REQUIRE_EXIT_TEXT))
 
             override suspend fun migrate(currentData: Preferences): Preferences {
@@ -344,6 +339,8 @@ class FocusStore(private val dataStore: DataStore<Preferences>) {
                     updated[REQUIRE_EXIT_TEXT] = updated[ACTIVE] == true
                 }
                 updated.remove(LEGACY_PHRASE)
+                updated.remove(LEGACY_NORMAL_LAUNCHER_PACKAGE)
+                updated.remove(LEGACY_NORMAL_LAUNCHER_CLASS)
                 return updated.toPreferences()
             }
 

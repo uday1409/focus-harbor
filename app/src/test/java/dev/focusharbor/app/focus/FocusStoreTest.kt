@@ -1,17 +1,14 @@
 package dev.focusharbor.app.focus
 
 import androidx.datastore.core.DataStore
-import androidx.datastore.core.CorruptionException
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.PreferencesFileSerializer
 import androidx.datastore.preferences.core.booleanPreferencesKey
-import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.mutablePreferencesOf
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
-import dev.focusharbor.app.home.LauncherTarget
 import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
@@ -170,7 +167,7 @@ class FocusStoreTest {
         val operations = listOf<suspend () -> SessionMutation>(
             { failingStore.startSession(apps, true, apps, FocusTime(1)) },
             { failingStore.endSession(text) },
-            { failingStore.saveNormalLauncher(LauncherTarget("example.home", "example.home.Home")) },
+            { failingStore.saveSafetyAccepted(true) },
         )
         for (operation in operations) {
             try {
@@ -183,35 +180,42 @@ class FocusStoreTest {
     }
 
     @Test
-    fun normalLauncherChoiceIsLockedDuringFocusAndSurvivesExit() = runTest {
+    fun safetyAcknowledgmentPersistsAcrossSessionsAndIsLockedWhileActive() = runTest {
         val preferences = dataStore(backgroundScope)
         val store = FocusStore(preferences)
-        val target = LauncherTarget("example.home", "example.home.Home")
-        val other = LauncherTarget("example.other", "example.other.Home")
-        assertEquals(SessionMutation.CONFIGURATION_SAVED, store.saveNormalLauncher(target))
+        assertFalse(store.states.first().safetyAccepted)
         store.startSession(apps, true, apps, FocusTime(123))
-        assertEquals(SessionMutation.ALREADY_ACTIVE, store.saveNormalLauncher(other))
-        assertEquals(target, FocusStore(preferences).states.first().normalLauncher)
-        assertEquals(SessionMutation.EXIT_TEXT_TOO_SHORT, store.endSession("too short"))
-        assertTrue(store.states.first().session.isActive)
+        assertTrue(FocusStore(preferences).states.first().safetyAccepted)
+        assertEquals(SessionMutation.ALREADY_ACTIVE, store.saveSafetyAccepted(false))
         assertEquals(SessionMutation.ENDED, store.endSession(text))
-        val ended = FocusStore(preferences).states.first()
-        assertFalse(ended.session.isActive)
-        assertEquals(target, ended.normalLauncher)
-        assertEquals(SessionMutation.CONFIGURATION_SAVED, store.saveNormalLauncher(other))
-        assertEquals(other, store.states.first().normalLauncher)
+        assertTrue(FocusStore(preferences).states.first().safetyAccepted)
+        assertEquals(SessionMutation.CONFIGURATION_SAVED, store.saveSafetyAccepted(false))
+        assertFalse(store.states.first().safetyAccepted)
     }
 
     @Test
-    fun incompleteLauncherSettingsAreNotTreatedAsAnIdleDefault() = runTest {
-        val preferences = dataStore(backgroundScope)
-        preferences.edit { it[stringPreferencesKey("normal_launcher_package")] = "example.home" }
-        try {
-            FocusStore(preferences).states.first()
-            fail("Partial launcher settings must be reported as corrupt")
-        } catch (_: CorruptionException) {
-            assertEquals("example.home", preferences.data.first()[stringPreferencesKey("normal_launcher_package")])
+    fun upgradingV13SettingsRemovesObsoleteLauncherKeysWhilePreservingSession() = runTest {
+        val oldPackage = stringPreferencesKey("normal_launcher_package")
+        val oldClass = stringPreferencesKey("normal_launcher_class")
+        val legacy = mutablePreferencesOf(
+            stringSetPreferencesKey("allowed_packages") to apps,
+            booleanPreferencesKey("require_exit_text") to false,
+            booleanPreferencesKey("active") to true,
+            longPreferencesKey("started_at_millis") to 456L,
+            oldPackage to "example.home",
+            oldClass to "example.home.HomeActivity",
+        )
+        File(temporaryFolder.root, "session.preferences_pb").outputStream().use {
+            PreferencesFileSerializer.writeTo(legacy, it)
         }
+        val preferences = dataStore(backgroundScope)
+        val store = FocusStore(preferences)
+        val session = store.sessions.first()
+        assertTrue(session.isActive)
+        assertFalse(session.requireExitText)
+        assertEquals(apps, session.allowedPackages)
+        assertFalse(preferences.data.first().contains(oldPackage))
+        assertFalse(preferences.data.first().contains(oldClass))
     }
 
     @Test

@@ -10,34 +10,28 @@ Recents, settings, links, or another app can still reach other apps. Normal
 in-app exit follows your pre-session word-challenge choice; OS recovery and uninstall remain
 possible. It is not a tamper-proof version of OnePlus Zen Space.
 
-**Download:** [Focus Harbor 1.3.0 evaluation APK and SHA-256 checksum](https://github.com/uday1409/focus-harbor/releases/tag/v1.3.0-preview).
+**Download:** [Focus Harbor 1.4.0 evaluation APK and SHA-256 checksum](https://github.com/uday1409/focus-harbor/releases/tag/v1.4.0-preview).
 Open the release's **Assets** section to download the debug-signed preview.
 
 ## Use it
 
 1. Manually install the evaluation APK after reviewing
    [safety and recovery](docs/safety-and-recovery.md). Android 8.0+ is required.
-2. Open **Focus Harbor** and **Choose normal launcher** once: select the Home
-   app you normally use. Then tap **Set as Home** and choose Focus Harbor in
-   Android's chooser. The saved return destination does not change Android's
-   default Home setting.
-3. Choose or create a **Work**, **Study**, **Sleep**, or **Time with family** preset
+2. Choose or create a **Work**, **Study**, **Sleep**, or **Time with family** preset
    and select at least one app with **Choose / open apps**. Each preset saves its
    own selection locally; you can rename or delete presets before focus.
-4. Optionally enter **What are you focusing on?** and choose a duration, or leave
-   the session open-ended. The intention is shown on Home and cleared on exit.
-   Optionally enable
-   **Require 10+ words to leave focus**. It is off by default; your choice is
-   remembered and can be changed before the next session. Phone access is separate.
-5. Read the safety note, accept it, and tap **Enter focus**.
-6. Tap **Leave focus** to return to your chosen normal launcher. With the challenge off, exit is
-   immediate. With it on, write **any text with at least 10 words** and tap
-   **End focus**. Exactly 10 words or any larger number is accepted; no text
-   needs to match a preset. The question is **What do you need your phone for?**
-   Home gestures also open your normal launcher while focus is off. Open the
-   **Focus Harbor app icon** to set up your next session. If the launcher is
-   unavailable, focus stays off and launcher selection/recovery is shown.
-7. When a timer reaches zero, Home offers **Finish** or **Keep going**. Finish
+3. Optionally choose a duration (or keep it open-ended), enter **What are you
+   focusing on?**, and optionally enable **Require 10+ words to leave focus**
+   (off by default, remembered between sessions).
+4. Accept the safety note once, then tap **Set Home & enter focus** (or **Enter
+   focus** if Focus Harbor is already your Home app) and choose Focus Harbor in
+   Android's prompt. Future sessions remember the safety note for quick entry.
+5. Tap **Leave focus** to end the session. With the challenge off, exit is one
+   tap; accidental Back swipes on Focus Home never end focus. With the challenge
+   on, answer **What do you need your phone for?** with **any 10+ words** and
+   tap **End focus**. Then tap **Switch to normal Home** at the top of the
+   screen to choose your usual launcher in Android Settings.
+6. When a timer reaches zero, Home offers **Finish** or **Keep going**. Finish
    follows the same selected exit policy; Keep going adds time or becomes
    open-ended. Focus never ends or launches other apps automatically.
 

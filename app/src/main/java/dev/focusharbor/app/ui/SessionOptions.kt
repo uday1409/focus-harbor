@@ -18,6 +18,9 @@ import androidx.compose.material3.TextButton
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,11 +44,18 @@ internal fun SessionOptions(
     state: FocusUiState,
     onIntention: (String) -> Unit,
     onDuration: (Int?) -> Unit,
+    onRequireExitText: (Boolean) -> Unit,
 ) {
     var choosingDuration by rememberSaveable { mutableStateOf(false) }
     SectionCard {
         Eyebrow(stringResource(R.string.step_session))
         Text(stringResource(R.string.session_title), style = MaterialTheme.typography.headlineSmall)
+        OutlinedButton(
+            onClick = { choosingDuration = true },
+            enabled = !state.busy,
+            modifier = Modifier.fillMaxWidth().testTag("duration-selector"),
+        ) { Text(durationLabel(state.draftDurationMinutes)) }
+        SupportingText(stringResource(R.string.duration_description))
         OutlinedTextField(
             value = state.draftIntention,
             onValueChange = onIntention,
@@ -53,24 +63,45 @@ internal fun SessionOptions(
             label = { Text(stringResource(R.string.intention_label)) },
             enabled = !state.busy,
             minLines = 1,
-            maxLines = 3,
+            maxLines = 2,
             keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
             isError = state.draftIntention.trim().length > FocusStore.MAX_INTENTION_LENGTH,
-            supportingText = {
-                Text(
-                    stringResource(
-                        R.string.intention_length, state.draftIntention.trim().length, FocusStore.MAX_INTENTION_LENGTH,
-                    ),
-                )
+            supportingText = if (state.draftIntention.isNotEmpty()) {
+                {
+                    Text(
+                        stringResource(
+                            R.string.intention_length,
+                            state.draftIntention.trim().length,
+                            FocusStore.MAX_INTENTION_LENGTH,
+                        ),
+                    )
+                }
+            } else {
+                { Text(stringResource(R.string.intention_privacy)) }
             },
         )
-        SupportingText(stringResource(R.string.intention_privacy))
-        OutlinedButton(
-            onClick = { choosingDuration = true },
-            enabled = !state.busy,
-            modifier = Modifier.fillMaxWidth().testTag("duration-selector"),
-        ) { Text(durationLabel(state.draftDurationMinutes)) }
-        SupportingText(stringResource(R.string.duration_description))
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        Row(
+            modifier = Modifier.fillMaxWidth().testTag("require-exit-text")
+                .toggleable(
+                    value = state.draftRequireExitText,
+                    enabled = !state.busy,
+                    role = Role.Checkbox,
+                    onValueChange = onRequireExitText,
+                )
+                .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Checkbox(
+                checked = state.draftRequireExitText,
+                onCheckedChange = null,
+                modifier = Modifier.padding(end = 10.dp),
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(stringResource(R.string.require_exit_text))
+                SupportingText(stringResource(R.string.exit_option_description))
+            }
+        }
     }
     if (choosingDuration) {
         DurationDialog(

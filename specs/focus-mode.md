@@ -16,12 +16,10 @@ Compile/target API: 36. This is a Home-screen filter, not an app firewall.
 | --- | --- | --- |
 | Loading | No guessed session; phone and recovery guidance available | Read persisted preferences |
 | Read error | Explicit failure; no setup, app launch, or new session | Retry storage or recover through Android |
-| Setup | Choose a normal launcher, select apps/exit choice, select Focus Harbor as Home, accept the boundary | Successful atomic start |
-| Focus | Only allowed installed apps shown; configuration hidden | Save an immediate exit if opted out; otherwise open the challenge |
-| Exit challenge | Accept any fresh text with at least 10 words | Valid word count atomically ends focus; cancel stays focused |
+| Setup | Select preset/apps, optional timer/intention/word challenge, one-time safety note, and Home role | Successful atomic start |
+| Focus | Only allowed installed apps shown; configuration hidden; Back stays on Focus Home | Leave immediately if opted out; otherwise open the challenge |
+| Exit challenge | Accept any fresh text with at least 10 words | Valid word count atomically ends focus; cancel or Back stays focused |
 | Time reached | Keep focus active and show Finish / Keep going on Home | Finish follows the selected exit policy; Keep going sets a new deadline or open-ended mode |
-| Normal Home | Open the chosen launcher after a saved exit or inactive Home intent | App icon opens setup; active Home intents show focus instead |
-| Launcher recovery | Focus stays off after exit; offer launcher selection, Android Home settings and safety guidance | An explicit valid selection is saved before retrying the handoff |
 
 Process death, configuration changes, reopening from the app icon, Home intents,
 and reboot do not intentionally clear an active persisted session. After reboot,
@@ -30,35 +28,20 @@ The elapsed clock is informational and uses wall time. Timed deadlines use
 monotonic elapsed time on the same boot, with a saved wall-clock deadline after
 reboot or when the platform boot counter is unavailable.
 
-## Returning to normal Home
+## Entering and switching Home cleanly
 
-- Choose a normal launcher once in setup, before starting a new session. Save
-  its explicit package/activity locally and independently of presets. Allow
-  changing it only while idle; do not assume the manufacturer launcher is wanted.
-- Discover only enabled, exported, usable Home activities in the current profile
-  with a narrow Home-intent query. Never target Focus Harbor or a guessed package.
-- Leave focus, Back when opted out, and timed Finish hand off only after the
-  normal exit transaction succeeds. A rejected or failed write never opens Home.
-- A new Home intent while idle opens the saved launcher directly, including
-  after activity recreation. Home while active stays on focus and never bypasses
-  the exit choice. Verify saved state before every handoff; unknown storage is
-  not an idle default.
-- App-icon entry while idle shows setup, not the normal launcher. Handle new
-  Home/app-icon intents on the existing single-task activity as well as cold entry.
-- Handoffs run once per request while the activity is resumed, not on every
-  resume, recomposition, timer tick, or settings refresh.
-- Revalidate the chosen Home component immediately before opening it. Missing
-  choices, unavailable components, discovery errors and denied launches surface
-  launcher selection, Android Home settings and recovery. An already-ended
-  session stays ended. An explicit replacement choice is saved before opening.
-- Stop rapid repeated automatic handoffs to avoid a launcher bouncing back to
-  this default Home. Pause automatic retries after errors until an explicit
-  launcher selection or manual retry; do not create an automatic resume loop.
-- Never silently change Android's default Home, disable components, modify
-  another app, add privileged permissions, or interfere with uninstall/recovery.
-  Forwarding makes idle Home feel normal; it is not a default-role reassignment.
-- Legacy active sessions without a saved launcher still retain their apps and
-  exit policy. They can end normally, then choose a launcher or use recovery.
+- Focus Harbor never proxies or forwards idle `CATEGORY_HOME` intents to another
+  launcher. Switching default launchers uses Android's native Home chooser only.
+- When Focus Harbor is not yet the default Home app, tapping **Set Home & enter
+  focus** opens Android's Home role chooser (API 29+) or Home settings (API 26-28)
+  and starts the session automatically once Focus Harbor holds the Home role.
+- When focus is off and Focus Harbor still holds the Home role (for example,
+  right after ending a session), the top card offers **Switch to normal Home**
+  (`Settings.ACTION_HOME_SETTINGS`) so the user can restore their usual launcher
+  in one tap without background forwarding loops.
+- The safety acknowledgment is accepted once and persisted in DataStore so
+  subsequent sessions do not require repetitive re-checking; **Recovery & safety**
+  remains available in the bottom bar at all times.
 
 ## Presets, intention, and duration
 
@@ -101,23 +84,25 @@ reboot or when the platform boot counter is unavailable.
   requirement. Entered text is transient and never persisted. This is friction,
   not a password or trusted proof of manual typing.
 - If disabled, Leave focus ends the session immediately without a text dialog.
-- Start requires a usable normal launcher, Focus Harbor Home selection, safety
-  acknowledgment, and at least one available selected app. The package set and
-  exit choice are snapshotted.
+- Start requires Focus Harbor Home selection, one-time safety acknowledgment,
+  and at least one available selected app. The package set and exit choice are
+  snapshotted.
 - Changing setup or starting again cannot overwrite an active session's choice.
 - The authoritative optional word-count check happens within the DataStore edit.
   UI button enablement is convenience, not authorization.
-- When enabled, fewer than 10 words, Back, dismissal, and recreation do not
-  end focus. When disabled, Back is also an immediate normal exit.
+- System Back on Focus Home never ends focus (whether the word challenge is
+  enabled or disabled) and never finishes the Home activity; when the exit
+  dialog is open, Back closes only the dialog.
 - An unavailable allowed app does not widen the allowlist. It is omitted and an
   explanation is shown. Phone and the exit challenge remain reachable.
 
 ## Upgrade behavior
 
-Remove legacy persisted custom phrases during DataStore migration. Preserve an
-already-active legacy session and its allowlist/timestamp, enabling the new
-free-form word-count gate for that session. Idle legacy settings default the
-optional gate off. Never overwrite an explicit new-format exit choice.
+Remove legacy persisted custom phrases and obsolete v1.3 normal-launcher keys
+during DataStore migration. Preserve an already-active legacy session and its
+allowlist/timestamp, enabling the new free-form word-count gate for that session.
+Idle legacy settings default the optional gate off. Never overwrite an explicit
+new-format exit choice.
 
 ## Explicit non-goals
 
@@ -144,18 +129,15 @@ routes, not normal in-app exits.
 | F10 | Phone intent never places a call or asks for call permission | APK inspection and emulator dialer-open check; never call an emergency number |
 | F11 | No dangerous/privileged/network permissions | `scripts/check.ps1` packaged-permission gate |
 | F12 | User can restore their original launcher without app cooperation | `SetupFlowTest` restores the emulator's stock Home role in cleanup; uninstall recovery is an additional manual check |
-| F13 | Opting out allows immediate exit without text | `FocusStoreTest.optingOutAllowsImmediateExitWithoutAnyText`, `FocusFlowTest.optingOutEndsFocusImmediatelyWithoutShowingATextChallenge`, `SetupFlowTest.userCanStartWithTheChallengeOffAndLeaveImmediately` |
-| F14 | Upgrade preserves active intent and removes legacy phrases | `FocusStoreTest.upgradingAnActiveLegacySessionKeepsTheGateButDeletesTheOldText`, `FocusStoreTest.upgradingIdleLegacySettingsDefaultsTheOptionalGateOff` |
+| F13 | Opting out allows immediate exit without text and one-tap re-entry | `FocusStoreTest.optingOutAllowsImmediateExitWithoutAnyText`, `FocusFlowTest.optingOutEndsFocusImmediatelyWithoutShowingATextChallenge`, `SetupFlowTest.userCanStartWithTheChallengeOffAndReenterWithoutRecheckingSafety` |
+| F14 | Upgrade preserves active intent and removes legacy phrases/launcher keys | `FocusStoreTest.upgradingAnActiveLegacySessionKeepsTheGateButDeletesTheOldText`, `FocusStoreTest.upgradingIdleLegacySettingsDefaultsTheOptionalGateOff`, `FocusStoreTest.upgradingV13SettingsRemovesObsoleteLauncherKeysWhilePreservingSession` |
 | F15 | Initial presets preserve old app selections and active sessions | `FocusPresetsAndTimingTest.presetInitializationPreservesLegacySelectionAndAnActiveSession` |
 | F16 | Preset CRUD and app selections remain independent | `FocusPresetsAndTimingTest.switchingPresetsSavesIndependentSelections`, `SetupFlowTest.presetsCanBeCreatedRenamedAndDeletedFromSetup` |
 | F17 | Intention appears on Home, survives recreation, and clears on exit | `FocusPresetsAndTimingTest.activePresetAndIntentionAreSnapshotsAndIntentionIsClearedOnExit`, `SetupFlowTest.presetsKeepSeparateAppsAndTheSessionShowsItsIntention` |
-| F18 | Deadline expiry never exits or bypasses selected word friction | `FocusPresetsAndTimingTest.reachingTimeNeverEndsFocusOrBypassesTheWordChallenge`, `FocusFlowTest.timedCompletionPreservesIntentionAndExitPolicyAndCanKeepGoing` |
+| F18 | Deadline expiry never exits or bypasses selected word friction | `FocusPresetsAndTimingTest.reachingTimeNeverEndsFocusOrBypassesTheWordChallenge`, `FocusFlowTest.timedCompletionPreservesIntentionAndExitPolicyAndCanKeepGoing`, `FocusFlowTest.timedFinishRequiresTenWordsWhenEnabledAndClearsIntention` |
 | F19 | Same-boot clock changes and reboot timing are handled explicitly | `FocusTimeTest` |
-| F20 | Normal launcher choice persists and is immutable during focus | `FocusStoreTest.normalLauncherChoiceIsLockedDuringFocusAndSurvivesExit` |
-| F21 | Idle Home forwards, while the app icon opens setup without changing Home role | `SetupFlowTest.idleHomeForwardsToTheSavedLauncherButTheAppIconStillOpensSetup` |
-| F22 | Successful Leave/Finish returns to normal Home only after the selected exit check | `FocusFlowTest.anyTenOrMoreWordsEndAnOptedInSession`, `FocusFlowTest.timedFinishReturnsToNormalLauncherOnlyAfterTheWordChallenge` |
-| F23 | Missing/legacy launcher settings offer recovery without restarting focus | `FocusFlowTest.unavailableNormalLauncherOffersRecoveryWithoutRestartingFocus`, `FocusFlowTest.legacySessionWithoutALauncherCanStillExitAndReachRecovery` |
-| F24 | Repeated automatic handoffs stop; malformed storage does not become an idle default | `HomeHandoffGuardTest`, `FocusStoreTest.incompleteLauncherSettingsAreNotTreatedAsAnIdleDefault` |
+| F20 | Back never ends an active session even when the word challenge is off | `FocusFlowTest.backPressNeverEndsFocusEvenWhenChallengeIsOff` |
+| F21 | One-time safety acknowledgment persists across sessions and locks while active | `FocusStoreTest.safetyAcknowledgmentPersistsAcrossSessionsAndIsLockedWhileActive`, `SetupFlowTest.userCanStartWithTheChallengeOffAndReenterWithoutRecheckingSafety` |
 
 OEM-specific behavior and Android 8/9 Home selection require device-matrix testing
 before wider distribution. Do not describe emulator evidence as OnePlus testing.

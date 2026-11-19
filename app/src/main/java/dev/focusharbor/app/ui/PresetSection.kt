@@ -9,6 +9,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -19,9 +20,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.focusharbor.app.FocusUiState
 import dev.focusharbor.app.R
@@ -34,6 +38,8 @@ internal fun PresetSection(
     onCreate: (String) -> Unit,
     onRename: (String) -> Unit,
     onDelete: () -> Unit,
+    onChooseApps: () -> Unit,
+    onClearSelection: () -> Unit,
 ) {
     val selected = state.presets.firstOrNull { it.id == state.selectedPresetId }
     var menu by rememberSaveable { mutableStateOf(false) }
@@ -41,9 +47,9 @@ internal fun PresetSection(
     var name by rememberSaveable { mutableStateOf("") }
     var deleting by rememberSaveable { mutableStateOf(false) }
     SectionCard {
-        Eyebrow(stringResource(R.string.step_presets))
-        Text(stringResource(R.string.presets_title), style = MaterialTheme.typography.headlineSmall)
-        SupportingText(stringResource(R.string.presets_description))
+        Eyebrow(stringResource(R.string.step_apps))
+        Text(stringResource(R.string.apps_title), style = MaterialTheme.typography.headlineSmall)
+        SupportingText(stringResource(R.string.apps_description))
         Box {
             OutlinedButton(
                 onClick = { menu = true },
@@ -81,6 +87,42 @@ internal fun PresetSection(
                 enabled = !state.busy && selected != null && state.presets.size > 1,
                 modifier = Modifier.testTag("preset-delete"),
             ) { Text(stringResource(R.string.delete_preset)) }
+        }
+        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+        Text(
+            pluralStringResource(
+                R.plurals.selected_count, state.draftAllowed.size, state.draftAllowed.size,
+            ),
+            color = MaterialTheme.colorScheme.primary,
+            fontWeight = FontWeight.SemiBold,
+        )
+        val selectedApps = state.apps.filter { it.packageName in state.draftAllowed }
+        if (selectedApps.isNotEmpty()) {
+            SupportingText(selectedApps.joinToString { it.label })
+        }
+        if (state.catalogLoaded && selectedApps.size < state.draftAllowed.size) {
+            Text(
+                stringResource(R.string.missing_apps),
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedButton(
+                onClick = onChooseApps,
+                enabled = !state.busy,
+                modifier = Modifier.testTag("choose-apps"),
+            ) {
+                Text(stringResource(R.string.choose_apps))
+            }
+            if (state.draftAllowed.isNotEmpty()) {
+                TextButton(onClick = onClearSelection, enabled = !state.busy) {
+                    Text(stringResource(R.string.clear_selection))
+                }
+            }
         }
     }
     if (editing != null) {

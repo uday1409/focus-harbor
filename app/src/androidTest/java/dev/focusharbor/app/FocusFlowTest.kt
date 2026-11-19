@@ -9,35 +9,31 @@ import android.view.KeyEvent
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasTestTag
-import androidx.compose.ui.test.hasText
-import androidx.compose.ui.test.hasAnyAncestor
-import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.junit4.ComposeTestRule
+import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
-import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.assertTextEquals
 import androidx.datastore.preferences.core.edit
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import dev.focusharbor.app.focus.FocusStore
 import dev.focusharbor.app.focus.AndroidFocusClock
 import dev.focusharbor.app.focus.FocusPlan
 import dev.focusharbor.app.focus.FocusPreset
+import dev.focusharbor.app.focus.FocusStore
 import dev.focusharbor.app.focus.FocusTime
-import dev.focusharbor.app.focus.remainingMillis
 import dev.focusharbor.app.focus.SessionMutation
 import dev.focusharbor.app.focus.focusDataStore
-import dev.focusharbor.app.home.LauncherTarget
-import dev.focusharbor.app.home.NormalLauncherCatalog
+import dev.focusharbor.app.focus.remainingMillis
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -59,7 +55,6 @@ class FocusFlowTest {
     private lateinit var allowedPackage: String
     private lateinit var otherPackage: String
     private lateinit var availablePackages: Set<String>
-    private lateinit var normalLauncher: LauncherTarget
     private var scenario: ActivityScenario<MainActivity>? = null
 
     @Before
@@ -75,20 +70,17 @@ class FocusFlowTest {
         allowedPackage = apps[0]
         otherPackage = apps[1]
         availablePackages = apps.toSet()
-        normalLauncher = NormalLauncherCatalog(context).load().first().target
     }
 
     private fun launchSession(
         requireExitText: Boolean,
         plan: FocusPlan = FocusPlan(),
         start: FocusTime = AndroidFocusClock(context).now(),
-        returnLauncher: LauncherTarget? = normalLauncher,
     ) {
         runBlocking {
             context.focusDataStore.edit { it.clear() }
             val store = FocusStore(context.focusDataStore)
             store.initializePresets(listOf(FocusPreset("work", context.getString(R.string.preset_work))))
-            returnLauncher?.let { store.saveNormalLauncher(it) }
             assertEquals(
                 SessionMutation.STARTED,
                 store.startSession(
@@ -138,8 +130,26 @@ class FocusFlowTest {
         compose.onNodeWithTag("confirm-exit").assertIsEnabled()
         compose.onNodeWithTag("exit-input").performTextReplacement("$tenWords today")
         compose.onNodeWithTag("confirm-exit").assertIsEnabled().performClick()
-        awaitNormalLauncher(compose, normalLauncher.packageName)
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithTag("start-focus").fetchSemanticsNodes().isNotEmpty()
+        }
         assertFalse(runBlocking { FocusStore(context.focusDataStore).sessions.first().isActive })
+    }
+
+    @Test
+    fun backPressNeverEndsFocusEvenWhenChallengeIsOff() {
+        launchSession(false)
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        compose.waitUntil(10_000) {
+            var focused = false
+            scenario?.onActivity { focused = it.hasWindowFocus() }
+            focused
+        }
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        compose.waitForIdle()
+        compose.onNodeWithTag("leave-focus").assertIsDisplayed()
+        compose.onNodeWithTag("start-focus").assertDoesNotExist()
+        assertTrue(runBlocking { FocusStore(context.focusDataStore).sessions.first().isActive })
     }
 
     @Test
@@ -152,6 +162,9 @@ class FocusFlowTest {
             focused
         }
         instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        compose.waitForIdle()
+        compose.onNodeWithTag("exit-input").assertDoesNotExist()
+        compose.onNodeWithTag("leave-focus").performClick()
         compose.waitUntil(5_000) {
             compose.onAllNodesWithTag("exit-input").fetchSemanticsNodes().isNotEmpty()
         }
@@ -173,8 +186,9 @@ class FocusFlowTest {
     fun optingOutEndsFocusImmediatelyWithoutShowingATextChallenge() {
         launchSession(false)
         compose.onNodeWithTag("leave-focus").performClick()
-        awaitNormalLauncher(compose, normalLauncher.packageName)
-        openFocusSetup(compose, context)
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithTag("start-focus").fetchSemanticsNodes().isNotEmpty()
+        }
         compose.onNodeWithTag("exit-input").assertDoesNotExist()
         assertFalse(runBlocking { FocusStore(context.focusDataStore).sessions.first().isActive })
     }
@@ -211,7 +225,7 @@ class FocusFlowTest {
     }
 
     @Test
-    fun timedFinishReturnsToNormalLauncherOnlyAfterTheWordChallenge() {
+    fun timedFinishRequiresTenWordsWhenEnabledAndClearsIntention() {
         val now = AndroidFocusClock(context).now()
         launchSession(
             true,
@@ -225,48 +239,13 @@ class FocusFlowTest {
         assertTrue(runBlocking { FocusStore(context.focusDataStore).sessions.first().isActive })
         compose.onNodeWithTag("exit-input").performTextReplacement(tenWords)
         compose.onNodeWithTag("confirm-exit").performClick()
-        awaitNormalLauncher(compose, normalLauncher.packageName)
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithTag("start-focus").fetchSemanticsNodes().isNotEmpty()
+        }
         val saved = runBlocking { FocusStore(context.focusDataStore).states.first() }
         assertFalse(saved.session.isActive)
         assertEquals("", saved.session.intention)
-        assertEquals(normalLauncher, saved.normalLauncher)
-    }
-
-    @Test
-    fun unavailableNormalLauncherOffersRecoveryWithoutRestartingFocus() {
-        launchSession(false, returnLauncher = LauncherTarget("example.missing", "example.missing.Home"))
-        compose.onNodeWithTag("leave-focus").performClick()
-        compose.waitUntil(10_000) {
-            compose.onAllNodesWithTag("normal-launcher-dialog").fetchSemanticsNodes().isNotEmpty()
-        }
-        compose.onNode(
-            hasText(context.getString(R.string.normal_launcher_unavailable)) and
-                hasAnyAncestor(hasTestTag("normal-launcher-dialog")),
-        ).assertIsDisplayed()
-        compose.onNodeWithTag("launcher-home-settings").assertIsDisplayed()
-        compose.onNodeWithTag("launcher-recovery-help").assertIsDisplayed()
-        assertFalse(runBlocking { FocusStore(context.focusDataStore).sessions.first().isActive })
-        compose.onNodeWithTag("normal-launcher-${normalLauncher.packageName}/${normalLauncher.className}").performClick()
-        awaitNormalLauncher(compose, normalLauncher.packageName)
-        assertEquals(normalLauncher, runBlocking { FocusStore(context.focusDataStore).states.first().normalLauncher })
-    }
-
-    @Test
-    fun legacySessionWithoutALauncherCanStillExitAndReachRecovery() {
-        launchSession(true, returnLauncher = null)
-        compose.onNodeWithTag("leave-focus").performClick()
-        compose.onNodeWithTag("exit-input").performTextInput(tenWords)
-        compose.onNodeWithTag("confirm-exit").performClick()
-        compose.waitUntil(10_000) {
-            compose.onAllNodesWithTag("normal-launcher-dialog").fetchSemanticsNodes().isNotEmpty()
-        }
-        compose.onNode(
-            hasText(context.getString(R.string.normal_launcher_required)) and
-                hasAnyAncestor(hasTestTag("normal-launcher-dialog")),
-        ).assertIsDisplayed()
-        assertFalse(runBlocking { FocusStore(context.focusDataStore).sessions.first().isActive })
-        compose.onNodeWithTag("launcher-recovery-help").performClick()
-        compose.onNodeWithText(context.getString(R.string.recovery_title)).assertIsDisplayed()
+        assertTrue(saved.safetyAccepted)
     }
 }
 
@@ -289,21 +268,6 @@ internal fun awaitModel(
         var ready = false
         scenario.onActivity { ready = condition(ViewModelProvider(it)[FocusViewModel::class.java].state.value) }
         ready
-    }
-}
-
-internal fun awaitNormalLauncher(compose: ComposeTestRule, packageName: String) {
-    val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
-    compose.waitUntil(15_000) { automation.rootInActiveWindow?.packageName?.toString() == packageName }
-}
-
-internal fun openFocusSetup(compose: ComposeTestRule, context: Context) {
-    emulatorShell(
-        "am start -W -a android.intent.action.MAIN -c android.intent.category.LAUNCHER " +
-            "-n ${context.packageName}/${MainActivity::class.java.name}",
-    )
-    compose.waitUntil(10_000) {
-        compose.onAllNodesWithTag("start-focus").fetchSemanticsNodes().isNotEmpty()
     }
 }
 

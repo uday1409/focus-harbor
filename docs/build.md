@@ -39,8 +39,8 @@ inspects the application's package ID, SDK range and packaged permissions,
 verifies its signature, and exports:
 
 ```text
-dist/focus-harbor-1.3.0-debug.apk
-dist/focus-harbor-1.3.0-debug.apk.sha256
+dist/focus-harbor-1.4.0-debug.apk
+dist/focus-harbor-1.4.0-debug.apk.sha256
 ```
 
 These are ignored generated files. The APK is debug-signed, debuggable, and
@@ -85,12 +85,12 @@ acceptance test temporarily grants the emulator's Home role and restores its
 original launcher in cleanup; it refuses physical hardware. Tests never place
 calls.
 
-Acceptance tests cover normal-launcher selection, saved-exit Home return, idle
-Home forwarding versus app-icon setup, unchanged Home-role ownership, legacy
-and missing-launcher recovery, both optional exit choices, preset CRUD and independent
-app sets, intention persistence, duration setup, Finish/Keep going, Home-role
-recovery, allowlist visibility, the 9/10/11-word boundary, Back/dismissal, and
-recreation. Domain tests also cover legacy upgrades and same-boot/reboot timing. Reports are under
+Acceptance tests cover both optional exit choices, Back-gesture safety on Focus
+Home, one-time safety persistence and one-tap re-entry, post-exit Home-switcher
+visibility, preset CRUD and independent app sets, intention persistence,
+duration setup, Finish/Keep going, Home-role recovery, allowlist visibility,
+the 9/10/11-word boundary, and recreation. Domain tests also cover legacy/v1.3
+upgrades and same-boot/reboot timing. Reports are under
 `app/build/reports/androidTests/connected/debug`.
 Use an emulator for additional force-stop/reboot/Home-role recovery checks.
 Do not claim physical-device or OEM coverage from these tests.
@@ -98,7 +98,7 @@ Do not claim physical-device or OEM coverage from these tests.
 ## GitHub
 
 The evaluation APK and its checksum are available under **Assets** in the
-[1.3.0 preview release](https://github.com/uday1409/focus-harbor/releases/tag/v1.3.0-preview).
+[1.4.0 preview release](https://github.com/uday1409/focus-harbor/releases/tag/v1.4.0-preview).
 The release is a debug-signed personal-evaluation build, not a Play Store release.
 Publication uses the existing repository without changing its visibility.
 

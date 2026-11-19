@@ -5,36 +5,20 @@ MainActivity
   -> Compose UI (FocusHarborApp)
   -> FocusViewModel (immutable StateFlow)
        -> AppCatalog -> Android LauncherApps, current user only
-       -> NormalLauncherCatalog -> current-profile exported Home activities
-       -> HomeRequest -> resumed MainActivity -> explicit normal-Home intent
        -> FocusStore -> Preferences DataStore, atomic edit
             -> ExitText (pure Kotlin word counting)
             -> FocusPreset / FocusPlan / FocusTime (local configuration and timing)
 ```
 
 `MainActivity` declares Android's HOME category. It neither grants itself the
-Home role nor modifies other applications. A user-initiated Android role chooser
-(API 29+) or Home settings screen (API 26-28) performs that selection.
-The role is rechecked on resume and immediately before starting a session.
-An inactive Home intent is distinct from app-icon entry. `onNewIntent` updates
-the single-task activity's intent so Home can forward while the app icon still
-opens setup, including after recreation.
-
-`NormalLauncherCatalog` uses a narrow `MAIN`/`HOME` package-visibility query.
-It excludes this package, disabled/unexported activities and inaccessible
-permission-protected components. The user explicitly chooses a package/activity
-once; DataStore saves it separately from presets and rejects edits during focus.
-Legacy sessions with no choice are not reset or blocked from normal exit.
-
-Only a successful `ENDED` result schedules an exit handoff. Home requests also
-re-read the persisted session, re-query the target, then recheck idle state after
-the query. The resumed activity consumes each request once before launching the
-explicit external Home component. Unknown storage, active focus, failed exit
-writes and stale requests never forward. No handoff is triggered by mere resume.
-A short monotonic handoff guard stops rapid launcher bounce loops; errors pause
-automatic retries until explicit selection/retry. Missing/denied Home targets
-show launcher selection and recovery without changing the saved ended state.
-Android's default Home role is not reassigned, and components are never disabled.
+Home role nor modifies other applications, and it never proxies idle Home
+intents to another launcher. A user-initiated Android role chooser (API 29+) or
+Home settings screen (API 26-28) performs Home selection. When Focus Harbor is
+not yet Home, **Set Home & enter focus** requests the Home role and starts focus
+once the role is held; when focus is off and Focus Harbor still holds Home, the
+top card opens `Settings.ACTION_HOME_SETTINGS` so the user can restore their
+usual launcher natively. The role is rechecked on resume and immediately before
+starting a session.
 
 `AppCatalog` uses `LauncherApps.getActivityList` for the current user, excludes
 this app, deduplicates packages, loads Android-provided labels/icons off the main
@@ -64,18 +48,22 @@ the current timer expires; it retains the original start, apps, intention and
 exit choice. UI ticking stops while Home is not visible; no alarms, services,
 notifications, automatic app launches, or extra permissions are involved.
 
-The DataStore migration removes legacy custom phrases. An active legacy session
-retains a word-count gate, without requiring its old phrase. Idle legacy settings
-default the new optional choice off. Explicit new-format choices are preserved.
+The DataStore migration removes legacy custom phrases and obsolete v1.3
+normal-launcher keys. An active legacy session retains a word-count gate,
+without requiring its old phrase. Idle legacy settings default the new optional
+choice off. Explicit new-format choices are preserved. One-time safety
+acknowledgment is persisted in DataStore so later sessions can start without
+re-checking the disclaimer.
 
 `FocusViewModel` owns drafts, role/catalog refresh, serialized user actions, and
 explicit errors. Read failures do not emit empty preferences. Failed writes are
 shown without pretending that the requested transition succeeded.
 
-The UI has setup, an app picker with normal-mode app launch, a focus grid, a
-read-only recovery guide, and an optional exit challenge. An enabled challenge
-accepts any 10 or more words; otherwise Leave focus or Back ends focus immediately.
-When enabled, Back opens or closes the challenge without ending the session.
+The UI has streamlined setup, an app picker with normal-mode app launch, a focus
+grid, a read-only recovery guide, and an optional exit challenge. An enabled
+challenge accepts any 10 or more words; otherwise tapping Leave focus ends focus
+immediately. System Back on Focus Home never ends focus; when the exit dialog is
+open, Back closes only the dialog.
 App launch goes through `LauncherApps.startMainActivity` and checks the allowlist.
 The phone button uses `ACTION_DIAL`, not `ACTION_CALL`.
 
