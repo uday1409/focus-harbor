@@ -39,8 +39,8 @@ inspects the application's package ID, SDK range and packaged permissions,
 verifies its signature, and exports:
 
 ```text
-dist/focus-harbor-1.5.0-debug.apk
-dist/focus-harbor-1.5.0-debug.apk.sha256
+dist/focus-harbor-1.6.0-debug.apk
+dist/focus-harbor-1.6.0-debug.apk.sha256
 ```
 
 These are ignored generated files. The APK is debug-signed, debuggable, and
@@ -99,7 +99,7 @@ Do not claim physical-device or OEM coverage from these tests.
 ## GitHub
 
 The evaluation APK and its checksum are available under **Assets** in the
-[1.5.0 preview release](https://github.com/uday1409/focus-harbor/releases/tag/v1.5.0-preview).
+[1.6.0 preview release](https://github.com/uday1409/focus-harbor/releases/tag/v1.6.0-preview).
 The release is a debug-signed personal-evaluation build, not a Play Store release.
 Publication uses the existing repository without changing its visibility.
 

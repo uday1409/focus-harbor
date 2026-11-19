@@ -1,5 +1,6 @@
 package dev.focusharbor.app
 
+import android.app.UiAutomation
 import android.content.Context
 import android.content.pm.LauncherApps
 import android.os.Build
@@ -94,7 +95,8 @@ class FocusFlowTest {
         }
         scenario = ActivityScenario.launch(MainActivity::class.java)
         compose.waitUntil(15_000) {
-            compose.onAllNodesWithTag("leave-focus").fetchSemanticsNodes().isNotEmpty()
+            compose.onAllNodesWithTag("leave-focus").fetchSemanticsNodes().isNotEmpty() ||
+                compose.onAllNodesWithTag("strict-timer-locked").fetchSemanticsNodes().isNotEmpty()
         }
     }
 
@@ -194,7 +196,24 @@ class FocusFlowTest {
     }
 
     @Test
-    fun timedCompletionPreservesIntentionAndExitPolicyAndCanKeepGoing() {
+    fun strictTimedSessionHidesManualExitWhileCountingDown() {
+        launchSession(false, FocusPlan(intention = "Deep work", durationMinutes = 25))
+        compose.onNodeWithTag("strict-timer-locked").assertIsDisplayed()
+        compose.onNodeWithTag("leave-focus").assertDoesNotExist()
+        val instrumentation = InstrumentationRegistry.getInstrumentation()
+        compose.waitUntil(10_000) {
+            var focused = false
+            scenario?.onActivity { focused = it.hasWindowFocus() }
+            focused
+        }
+        instrumentation.sendKeyDownUpSync(KeyEvent.KEYCODE_BACK)
+        compose.waitForIdle()
+        compose.onNodeWithTag("strict-timer-locked").assertIsDisplayed()
+        assertTrue(runBlocking { FocusStore(context.focusDataStore).sessions.first().isActive })
+    }
+
+    @Test
+    fun timedCompletionUnlocksAndCanKeepGoingIntoANewStrictCountdown() {
         val clock = AndroidFocusClock(context)
         val now = clock.now()
         launchSession(
@@ -203,11 +222,7 @@ class FocusFlowTest {
             now.copy(epochMillis = now.epochMillis - 120_000, elapsedRealtimeMillis = now.elapsedRealtimeMillis - 120_000),
         )
         compose.onNodeWithTag("session-intention").assertTextEquals("Finish chapter 3")
-        compose.onNodeWithTag("focus-apps").performScrollToNode(hasTestTag("time-reached-finish"))
-        compose.onNodeWithTag("time-reached-finish").performClick()
-        compose.onNodeWithTag("exit-input").performTextInput("one two three four five six seven eight nine")
-        compose.onNodeWithTag("confirm-exit").assertIsNotEnabled()
-        compose.onNodeWithText(context.getString(R.string.stay_focused)).performClick()
+        compose.onNodeWithTag("leave-focus").assertIsDisplayed()
         compose.onNodeWithTag("focus-apps").performScrollToNode(hasTestTag("keep-going"))
         compose.onNodeWithTag("keep-going").performClick()
         compose.onNodeWithTag("duration-choice-15").performClick()
@@ -215,9 +230,10 @@ class FocusFlowTest {
         awaitModel(compose, requireNotNull(scenario)) {
             !it.busy && it.session?.remainingMillis(clock.now())?.let { remaining -> remaining > 0 } == true
         }
+        compose.onNodeWithTag("strict-timer-locked").assertIsDisplayed()
+        compose.onNodeWithTag("leave-focus").assertDoesNotExist()
         val saved = runBlocking { FocusStore(context.focusDataStore).sessions.first() }
         assertTrue(saved.isActive)
-        assertTrue(saved.requireExitText)
         assertEquals("Finish chapter 3", saved.intention)
         scenario?.recreate()
         compose.onNodeWithTag("session-intention").assertTextEquals("Finish chapter 3")
@@ -225,7 +241,7 @@ class FocusFlowTest {
     }
 
     @Test
-    fun timedFinishRequiresTenWordsWhenEnabledAndClearsIntention() {
+    fun timedFinishEndsInOneTapWithoutWordChallengeAndClearsIntention() {
         val now = AndroidFocusClock(context).now()
         launchSession(
             true,
@@ -234,14 +250,10 @@ class FocusFlowTest {
         )
         compose.onNodeWithTag("focus-apps").performScrollToNode(hasTestTag("time-reached-finish"))
         compose.onNodeWithTag("time-reached-finish").performClick()
-        compose.onNodeWithTag("exit-input").performTextInput("one two three four five six seven eight nine")
-        compose.onNodeWithTag("confirm-exit").assertIsNotEnabled()
-        assertTrue(runBlocking { FocusStore(context.focusDataStore).sessions.first().isActive })
-        compose.onNodeWithTag("exit-input").performTextReplacement(tenWords)
-        compose.onNodeWithTag("confirm-exit").performClick()
         compose.waitUntil(10_000) {
             compose.onAllNodesWithTag("start-focus").fetchSemanticsNodes().isNotEmpty()
         }
+        compose.onNodeWithTag("exit-input").assertDoesNotExist()
         val saved = runBlocking { FocusStore(context.focusDataStore).states.first() }
         assertFalse(saved.session.isActive)
         assertEquals("", saved.session.intention)
@@ -271,9 +283,13 @@ internal fun awaitModel(
     }
 }
 
+internal fun emulatorUiAutomation(): UiAutomation =
+    InstrumentationRegistry.getInstrumentation()
+        .getUiAutomation(UiAutomation.FLAG_DONT_SUPPRESS_ACCESSIBILITY_SERVICES)
+
 internal fun emulatorShell(command: String): String {
     check(Build.HARDWARE == "ranchu") { "Test shell commands are limited to the dedicated emulator" }
     return ParcelFileDescriptor.AutoCloseInputStream(
-        InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(command),
+        emulatorUiAutomation().executeShellCommand(command),
     ).bufferedReader().use { it.readText() }
 }

@@ -3,6 +3,7 @@ package dev.focusharbor.app.ui
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.provider.Settings
+import androidx.core.net.toUri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -108,11 +109,28 @@ fun FocusHarborApp(model: FocusViewModel) {
     var showExit by rememberSaveable { mutableStateOf(false) }
     var showRecovery by rememberSaveable { mutableStateOf(false) }
     var showPicker by rememberSaveable { mutableStateOf(false) }
+    var showAppGuardSetup by rememberSaveable { mutableStateOf(false) }
     var pendingStartAfterHome by rememberSaveable { mutableStateOf(false) }
     val active = state.session?.isActive == true
+    val lifecycleOwner = LocalLifecycleOwner.current
+    var now by remember { mutableStateOf(model.currentTime()) }
+    LaunchedEffect(state.session) {
+        now = model.currentTime()
+    }
+    LaunchedEffect(active, lifecycleOwner) {
+        if (!active) return@LaunchedEffect
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                now = model.currentTime()
+                delay(1_000)
+            }
+        }
+    }
+    val remaining = if (active) state.session?.remainingMillis(now) else null
+    val strictLocked = active && remaining != null && remaining > 0L
     val requestExit: () -> Unit = {
-        if (!state.busy) {
-            if (state.session?.requireExitText == true) {
+        if (!state.busy && !strictLocked) {
+            if (state.session?.isTimebound != true && state.session?.requireExitText == true) {
                 showExit = true
             } else {
                 model.endFocus("")
@@ -141,7 +159,15 @@ fun FocusHarborApp(model: FocusViewModel) {
     val chooseHome: () -> Unit = { launchHomeSelection(model.homeSelectionIntent(), false) }
     val switchNormalHome: () -> Unit = { launchHomeSelection(Intent(Settings.ACTION_HOME_SETTINGS), false) }
     val setHomeAndStart: () -> Unit = { launchHomeSelection(model.homeSelectionIntent(), true) }
-    val lifecycleOwner = LocalLifecycleOwner.current
+    val openAppInfo: () -> Unit = {
+        launchHomeSelection(
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:${context.packageName}".toUri()),
+            false,
+        )
+    }
+    val openAccessibilitySettings: () -> Unit = {
+        launchHomeSelection(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS), false)
+    }
     val currentSwitchNormalHome by rememberUpdatedState(switchNormalHome)
 
     LaunchedEffect(lifecycleOwner, model) {
@@ -150,6 +176,9 @@ fun FocusHarborApp(model: FocusViewModel) {
                 currentSwitchNormalHome()
             }
         }
+    }
+    LaunchedEffect(state.appGuardServiceEnabled) {
+        if (state.appGuardServiceEnabled) showAppGuardSetup = false
     }
     LaunchedEffect(state.message) {
         state.message?.let {
@@ -162,6 +191,7 @@ fun FocusHarborApp(model: FocusViewModel) {
             showExit = false
         } else {
             showPicker = false
+            showAppGuardSetup = false
             pendingStartAfterHome = false
         }
     }
@@ -176,8 +206,10 @@ fun FocusHarborApp(model: FocusViewModel) {
         bottomBar = {
             BottomBar(
                 state = state,
+                strictLocked = strictLocked,
                 onStart = model::startFocus,
                 onSetHomeAndStart = setHomeAndStart,
+                onOpenAppGuardSetup = { showAppGuardSetup = true },
                 onExit = requestExit,
                 onPhone = model::openPhone,
                 onRecovery = { showRecovery = true },
@@ -200,7 +232,13 @@ fun FocusHarborApp(model: FocusViewModel) {
                     Text(stringResource(R.string.loading))
                 }
                 active -> FocusScreen(
-                    state, model::launchApp, model::refresh, requestExit, model::keepGoing, model::currentTime,
+                    state = state,
+                    now = now,
+                    remaining = remaining,
+                    onOpen = model::launchApp,
+                    onRetry = model::refresh,
+                    onFinish = requestExit,
+                    onKeepGoing = model::keepGoing,
                 )
                 else -> SetupScreen(
                     state = state,
@@ -208,6 +246,8 @@ fun FocusHarborApp(model: FocusViewModel) {
                     onSwitchNormalHome = switchNormalHome,
                     onRequireExitText = model::setRequireExitText,
                     onOpenHomeOnExit = model::setOpenHomeOnExit,
+                    onStrictAppGuard = model::setStrictAppGuard,
+                    onOpenAppGuardSetup = { showAppGuardSetup = true },
                     onChooseApps = { showPicker = true },
                     onClearSelection = model::clearSelection,
                     onSafetyAccepted = model::setSafetyAccepted,
@@ -222,11 +262,19 @@ fun FocusHarborApp(model: FocusViewModel) {
         }
     }
 
-    if (showExit && active && state.session?.requireExitText == true) {
+    if (showExit && active && state.session?.isTimebound != true && state.session?.requireExitText == true) {
         ExitDialog(
             busy = state.busy,
             onDismiss = { showExit = false },
             onConfirm = model::endFocus,
+        )
+    }
+    if (showAppGuardSetup && !active) {
+        AppGuardSetupDialog(
+            batteryUnrestricted = state.batteryUnrestricted,
+            onOpenAppInfo = openAppInfo,
+            onOpenAccessibility = openAccessibilitySettings,
+            onDismiss = { showAppGuardSetup = false },
         )
     }
     if (showRecovery) {
@@ -287,6 +335,8 @@ private fun SetupScreen(
     onSwitchNormalHome: () -> Unit,
     onRequireExitText: (Boolean) -> Unit,
     onOpenHomeOnExit: (Boolean) -> Unit,
+    onStrictAppGuard: (Boolean) -> Unit,
+    onOpenAppGuardSetup: () -> Unit,
     onChooseApps: () -> Unit,
     onClearSelection: () -> Unit,
     onSafetyAccepted: (Boolean) -> Unit,
@@ -342,7 +392,17 @@ private fun SetupScreen(
                 onClearSelection = onClearSelection,
             )
         }
-        item { SessionOptions(state, onIntention, onDuration, onRequireExitText, onOpenHomeOnExit) }
+        item {
+            SessionOptions(
+                state = state,
+                onIntention = onIntention,
+                onDuration = onDuration,
+                onRequireExitText = onRequireExitText,
+                onOpenHomeOnExit = onOpenHomeOnExit,
+                onStrictAppGuard = onStrictAppGuard,
+                onOpenAppGuardSetup = onOpenAppGuardSetup,
+            )
+        }
         if (!state.defaultHome) {
             item {
                 SectionCard {
@@ -426,14 +486,17 @@ internal fun SupportingText(text: String) {
 @Composable
 private fun BottomBar(
     state: FocusUiState,
+    strictLocked: Boolean,
     onStart: () -> Unit,
     onSetHomeAndStart: () -> Unit,
+    onOpenAppGuardSetup: () -> Unit,
     onExit: () -> Unit,
     onPhone: () -> Unit,
     onRecovery: () -> Unit,
 ) {
     val active = state.session?.isActive == true
     val ready = state.session != null && !state.storageError
+    val needsGuardSetup = state.draftStrictAppGuard && !state.appGuardServiceEnabled
     val setupReady = ready && !state.busy && state.catalogLoaded &&
         !state.catalogError && state.safetyAccepted &&
         state.selectedPresetId != null &&
@@ -449,34 +512,48 @@ private fun BottomBar(
             verticalArrangement = Arrangement.spacedBy(4.dp),
         ) {
             if (ready) {
-                Button(
-                    onClick = when {
-                        active -> onExit
-                        state.defaultHome -> onStart
-                        else -> onSetHomeAndStart
-                    },
-                    enabled = if (active) !state.busy else setupReady,
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)
-                        .testTag(if (active) "leave-focus" else "start-focus"),
-                    shape = RoundedCornerShape(16.dp),
-                ) {
-                    if (state.busy) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(18.dp),
-                            strokeWidth = 2.dp,
-                            color = MaterialTheme.colorScheme.onPrimary,
-                        )
-                        Spacer(Modifier.width(10.dp))
-                    }
+                if (strictLocked) {
                     Text(
-                        stringResource(
-                            when {
-                                active -> R.string.leave_focus
-                                state.defaultHome -> R.string.start_focus
-                                else -> R.string.set_home_and_start_focus
-                            },
-                        ),
+                        stringResource(R.string.strict_timer_locked),
+                        style = MaterialTheme.typography.labelLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 10.dp)
+                            .testTag("strict-timer-locked"),
                     )
+                } else {
+                    Button(
+                        onClick = when {
+                            active -> onExit
+                            needsGuardSetup -> onOpenAppGuardSetup
+                            state.defaultHome -> onStart
+                            else -> onSetHomeAndStart
+                        },
+                        enabled = if (active) !state.busy else setupReady,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 52.dp)
+                            .testTag(if (active) "leave-focus" else "start-focus"),
+                        shape = RoundedCornerShape(16.dp),
+                    ) {
+                        if (state.busy) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.onPrimary,
+                            )
+                            Spacer(Modifier.width(10.dp))
+                        }
+                        val label = when {
+                            active -> stringResource(R.string.leave_focus)
+                            needsGuardSetup -> stringResource(R.string.setup_guard_to_start)
+                            state.defaultHome && state.draftDurationMinutes != null ->
+                                stringResource(R.string.start_strict_focus, state.draftDurationMinutes)
+                            state.defaultHome -> stringResource(R.string.start_focus)
+                            state.draftDurationMinutes != null ->
+                                stringResource(R.string.set_home_and_start_strict_focus, state.draftDurationMinutes)
+                            else -> stringResource(R.string.set_home_and_start_focus)
+                        }
+                        Text(label)
+                    }
                 }
                 if (!active && !setupReady) {
                     val hint = when {
@@ -638,26 +715,16 @@ private fun AppRow(
 @Composable
 private fun FocusScreen(
     state: FocusUiState,
+    now: FocusTime,
+    remaining: Long?,
     onOpen: (LaunchableApp) -> Unit,
     onRetry: () -> Unit,
     onFinish: () -> Unit,
     onKeepGoing: (Int?) -> Unit,
-    currentTime: () -> FocusTime,
 ) {
     val session = state.session ?: return
     val allowed = state.apps.filter { it.packageName in session.allowedPackages }
-    val lifecycleOwner = LocalLifecycleOwner.current
-    var now by remember { mutableStateOf(currentTime()) }
     var extending by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(lifecycleOwner) {
-        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
-            while (true) {
-                now = currentTime()
-                delay(1_000)
-            }
-        }
-    }
-    val remaining = session.remainingMillis(now)
     LazyVerticalGrid(
         columns = GridCells.Adaptive(minSize = 104.dp),
         modifier = Modifier.testTag("focus-apps"),

@@ -23,6 +23,8 @@ import dev.focusharbor.app.focus.FocusSession
 import dev.focusharbor.app.focus.FocusStore
 import dev.focusharbor.app.focus.SessionMutation
 import dev.focusharbor.app.focus.focusDataStore
+import dev.focusharbor.app.guard.FocusAppGuardService
+import dev.focusharbor.app.guard.FocusGuardSignals
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -42,9 +44,12 @@ data class FocusUiState(
     val catalogError: Boolean = false,
     val storageError: Boolean = false,
     val defaultHome: Boolean = false,
+    val appGuardServiceEnabled: Boolean = false,
+    val batteryUnrestricted: Boolean = false,
     val draftAllowed: Set<String> = emptySet(),
     val draftRequireExitText: Boolean = false,
-    val draftOpenHomeOnExit: Boolean = false,
+    val draftOpenHomeOnExit: Boolean = true,
+    val draftStrictAppGuard: Boolean = false,
     val presets: List<FocusPreset> = emptyList(),
     val selectedPresetId: String? = null,
     val draftIntention: String = "",
@@ -69,6 +74,15 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         retryStorage()
+        viewModelScope.launch {
+            var previous = FocusGuardSignals.blockedCount.value
+            FocusGuardSignals.blockedCount.collect { count ->
+                if (count > previous) {
+                    previous = count
+                    notify(R.string.app_guard_blocked)
+                }
+            }
+        }
     }
 
     fun retryStorage() {
@@ -111,6 +125,11 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
                                 session.openHomeOnExit
                             } else {
                                 it.draftOpenHomeOnExit
+                            },
+                            draftStrictAppGuard = if (initializeDraft) {
+                                session.strictAppGuard
+                            } else {
+                                it.draftStrictAppGuard
                             },
                             draftIntention = if (initializeDraft) "" else it.draftIntention,
                             draftDurationMinutes = if (initializeDraft) saved.lastDurationMinutes else it.draftDurationMinutes,
@@ -169,7 +188,14 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun refresh() {
-        mutableState.update { it.copy(defaultHome = isDefaultHome()) }
+        val context = getApplication<Application>()
+        mutableState.update {
+            it.copy(
+                defaultHome = isDefaultHome(),
+                appGuardServiceEnabled = FocusAppGuardService.isEnabled(context),
+                batteryUnrestricted = FocusAppGuardService.isBatteryUnrestricted(context),
+            )
+        }
         if (catalogJob?.isActive == true) return
         catalogJob = viewModelScope.launch {
             try {
@@ -211,6 +237,25 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
                 store.saveOpenHomeOnExit(enabled)
             } catch (error: IOException) {
                 Log.e(TAG, "Unable to save the exit Home-switcher preference.", error)
+            }
+        }
+    }
+
+    fun setStrictAppGuard(enabled: Boolean) {
+        if (!canEdit()) return
+        val context = getApplication<Application>()
+        mutableState.update {
+            it.copy(
+                draftStrictAppGuard = enabled,
+                appGuardServiceEnabled = FocusAppGuardService.isEnabled(context),
+                batteryUnrestricted = FocusAppGuardService.isBatteryUnrestricted(context),
+            )
+        }
+        viewModelScope.launch {
+            try {
+                store.saveStrictAppGuard(enabled)
+            } catch (error: IOException) {
+                Log.e(TAG, "Unable to save the Strict App Guard preference.", error)
             }
         }
     }
@@ -273,6 +318,10 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
             notify(R.string.catalog_error)
             return
         }
+        if (current.draftStrictAppGuard && !FocusAppGuardService.isEnabled(getApplication())) {
+            mutableState.update { it.copy(appGuardServiceEnabled = false, message = R.string.app_guard_required) }
+            return
+        }
         mutate {
             store.startSession(
                 allowedPackages = current.draftAllowed,
@@ -284,6 +333,7 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
                     intention = current.draftIntention,
                     durationMinutes = current.draftDurationMinutes,
                     openHomeOnExit = current.draftOpenHomeOnExit,
+                    strictAppGuard = current.draftStrictAppGuard,
                 ),
             )
         }
@@ -293,7 +343,7 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
         if (state.value.busy) return
         mutate {
             val openHomeAfter = store.sessions.first().openHomeOnExit
-            val result = store.endSession(enteredText)
+            val result = store.endSession(enteredText, clock.now())
             if (result == SessionMutation.ENDED && openHomeAfter && isDefaultHome()) {
                 openHomeChannel.trySend(Unit)
             }
@@ -314,6 +364,7 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
                     SessionMutation.NO_ALLOWED_APPS -> R.string.select_apps
                     SessionMutation.APPS_UNAVAILABLE -> R.string.apps_unavailable
                     SessionMutation.EXIT_TEXT_TOO_SHORT -> R.string.exit_text_too_short
+                    SessionMutation.STRICT_TIMER_ACTIVE -> R.string.strict_timer_active
                     SessionMutation.PRESET_NOT_FOUND -> R.string.preset_not_found
                     SessionMutation.INVALID_PRESET_NAME -> R.string.invalid_preset_name
                     SessionMutation.DUPLICATE_PRESET_NAME -> R.string.duplicate_preset_name

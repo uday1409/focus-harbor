@@ -2,20 +2,34 @@
 
 ## Read first
 
-This is an offline Android Home launcher, not a kiosk, device manager, security
-boundary, or system-wide app blocker. Read `specs/focus-mode.md` and
+This is an offline, reversible Android focus launcher, not a kiosk, device-owner
+manager, or tamper-proof security boundary. Read `specs/focus-mode.md` and
 `docs/safety-and-recovery.md` before changing focus behavior.
 
 ## Non-negotiable invariants
 
-- Never add root, device-owner/admin, accessibility interception, overlays,
-  usage-access monitoring, VPNs, package disabling, or lock-task behavior.
-- Keep Android recovery, uninstallation, the notification shade, Recents, and
-  the device's emergency-call mechanisms untouched.
-- The exit challenge is optional before focus, off by default. When enabled,
-  any text with at least 10 words permits exit; no preset exit text or match is required.
-  When disabled, exit immediately. Enforce the stored choice atomically in DataStore.
-- An active session's exit choice and allowlist cannot be edited or overwritten.
+- Never add root, device-owner/admin, overlays (`SYSTEM_ALERT_WINDOW`),
+  usage-access polling (`PACKAGE_USAGE_STATS`), VPNs, package disabling, or
+  lock-task pinning.
+- The optional **Strict App Guard** (`FocusAppGuardService`) must remain a
+  **package-only** `AccessibilityService` (`canRetrieveWindowContent="false"`,
+  `TYPE_WINDOW_STATE_CHANGED` only). Never read window content, UI hierarchies,
+  typed text, or notification content.
+- Always exempt the Phone dialer (`ACTION_DIAL`), telecom/emergency/in-call UI,
+  enabled IME keyboards, and non-Recents `com.android.systemui` (Power menu,
+  lock screen, volume) so emergency calls and **Android Safe Mode** hardware
+  recovery remain available at all times.
+- Stop `FocusAppGuardService` blocking immediately when a timed session reaches
+  `00:00`, when the session ends, or when `strictAppGuard` is false.
+- **Open-ended sessions** allow manual exit anytime; the 10-or-more-word exit
+  challenge is optional before focus and off by default. When enabled, any text
+  with at least 10 words permits exit; no preset match is required.
+- **Strict Timebound sessions** (1–180 minutes max) disable manual exit while
+  `remainingMillis > 0` inside `FocusStore`'s atomic DataStore check, and clamp
+  `remainingMillis` monotonically so clock jumps never extend the timer. At
+  `00:00`, **Finish** unlocks in one tap and **Keep going** is explicit.
+- An active session's mode, guard flag, exit choice, and allowlist cannot be
+  edited or overwritten.
 - Never proxy or forward idle `CATEGORY_HOME` intents to another launcher; use
   Android's standard user-controlled Home role/settings chooser instead.
 - System Back on Focus Home must never end an active session or finish the
@@ -24,9 +38,7 @@ boundary, or system-wide app blocker. Read `specs/focus-mode.md` and
   active snapshot. Keep at least one preset and preserve legacy selections.
 - Intentions are optional, local to an active session, and removed on exit.
   Do not log them or retain an intention/reason history.
-- Timed expiry never ends focus, opens apps, or bypasses the selected exit
-  challenge. Finish uses the normal exit transaction; Keep going is explicit.
-- Do not add breaks, alarms, notifications, or background services for timers.
+- Do not add breaks, alarms, notifications, or polling loops for timers.
   Offer completion when the user is on or returns to Home.
 - Persist a complete session before showing success. Surface storage and
   app-launch failures; never reset an unreadable session to an idle default.
@@ -37,7 +49,8 @@ boundary, or system-wide app blocker. Read `specs/focus-mode.md` and
 
 ## Map
 
-- `app/src/main/java/dev/focusharbor/app/focus`: text policy and atomic storage.
+- `app/src/main/java/dev/focusharbor/app/focus`: text/time policy and atomic storage.
+- `app/src/main/java/dev/focusharbor/app/guard`: package-only Accessibility App Guard and safety exemptions.
 - `app/src/main/java/dev/focusharbor/app/apps`: current-profile launcher catalog.
 - `FocusViewModel.kt`: Android integration, lifecycle refresh, explicit errors.
 - `app/src/main/java/dev/focusharbor/app/ui`: Compose UI and exit challenge.

@@ -7,87 +7,63 @@ modifies firmware, bootloader, partitions, OS files, other apps' data, package
 enabled states, networking, or a device-management policy. Becoming Home
 requires Android's own user-controlled selection.
 
-There is no root, device owner/admin, accessibility interception, overlay,
-lock-task pinning, usage-access monitor, VPN, automatic DND, or blocking service.
+There is no root, device owner/admin, screen-content inspection, overlay,
+lock-task pinning, usage-access monitor, VPN, or automatic DND. When the user
+optionally enables **Block non-allowed apps & Recents** (`FocusAppGuardService`),
+it uses an Android `AccessibilityService` strictly limited to foreground package
+names (`canRetrieveWindowContent="false"`, `TYPE_WINDOW_STATE_CHANGED` only) and
+never reads chat messages, passwords, or screen text.
 The app does not request Internet, phone-call, contacts, location, storage, or
-other dangerous permissions. AndroidX may contribute an app-specific
-signature-only receiver permission; it is not a user-granted dangerous permission.
+other dangerous `<uses-permission>` entries.
 
-The phone button is always present, including storage-error screens, and merely
-opens the installed dialer. It cannot guarantee that a dialer or emergency
-service exists on a particular tablet, emulator, or carrier setup. The system
-lock-screen emergency feature remains untouched. Never test emergency numbers.
+The phone button is always present, including during Strict Timebound sessions
+and storage-error screens, and merely opens the installed dialer. Phone dialers,
+telecom/in-call screens, emergency call UI, enabled keyboards, and the Android
+Power menu are always exempt from App Guard blocking. Never test emergency
+numbers.
 
 No software can promise zero bugs on every device. The implementation is designed
 to remain recoverable, not to make a universal "cannot corrupt a device"
 certification. Do not use it as a child-safety, clinical, enterprise-management,
 emergency, or security-control product.
 
-## What it cannot enforce
+## Modes and what each enforces
 
-Focus limits the Home screen only. Notifications, Recents, Quick Settings,
-voice assistants, links, app-to-app navigation, Android settings, force-stop,
-clearing storage, safe mode, and uninstall can bypass that screen. Selected apps
-can open other apps. Work/private profiles and other users are not managed.
-The UI explains this before each session can start.
-
-The optional challenge accepts any text with at least 10 words. There is no
-preset or matching requirement, and entered text is not saved. It introduces
-intentional friction, not secrecy or adversarial lockout. Do not enter a password,
-financial information, private personal data, or sensitive work information.
-Keyboard/assistive input and paste are not cryptographically distinguishable from
-manual typing.
+- **Home-only vs. Strict App Guard:** With Strict App Guard off, Focus Harbor
+  limits the Home screen only (links, notifications, and Recents can still open
+  other apps). With **Block non-allowed apps & Recents** turned on (after
+  completing the one-time Android App Info + Accessibility toggle), opening a
+  non-allowlisted app (such as a browser link from chat) or Recents immediately
+  returns you to Focus Harbor until the session ends or a strict timer reaches
+  `00:00`.
+- **Open-ended vs. Strict Timebound (1–180 min):** Open-ended sessions let you
+  tap **Leave focus** anytime (with an optional 10+ word challenge). Strict
+  Timebound sessions cap duration at 180 minutes, clamp remaining time against
+  clock jumps, and hide **Leave focus** until the countdown reaches `00:00`. At
+  `00:00`, App Guard stops blocking immediately and **Finish** unlocks in one
+  tap (or **Keep going** starts a new timer).
 
 ## Normal exit
 
-Before starting, optionally enable **Require 10+ words to leave focus**.
-The option is off by default, remembered between sessions, and locked while active.
-Tap **Leave focus**: if the option is off, the session ends immediately. If it is
-on, write any text with at least 10 words and tap **End focus**. Exactly 10 and
-longer texts are accepted; case, wording, and punctuation do not need to match
-anything. Punctuation-only tokens do not count as words.
-Accidental Back gestures on Focus Home never end an active session.
+- **Open-ended:** Tap **Leave focus**. If **Require 10+ words to leave focus**
+  is off, focus ends in one tap; if on, write any 10+ words and tap **End
+  focus**.
+- **Strict Timebound:** Wait until the countdown reaches `00:00`, then tap
+  **Finish** (1 tap, no word challenge).
+- **Open Home switcher when leaving focus** is enabled by default so Android's
+  Home settings open automatically right after focus ends, letting you switch
+  back to your normal launcher in one tap.
 
-After leaving focus, Focus Harbor shows **Switch to normal Home** at the top of
-the screen whenever it is still your default Home app, opening Android's native
-Home switcher so you can choose your usual launcher cleanly without background
-Home forwarding. You can also enable **Open Home switcher when leaving focus**
-before starting so Android's Home switcher opens automatically as soon as focus
-ends. Your safety acknowledgment is remembered after the first session, while
-**Recovery & safety** remains available at all times.
+## Recovery without cooperating with the app (Safe Mode & Settings)
 
-On upgrade, an already-active old session retains the word-count challenge,
-but its custom phrase and obsolete v1.3 normal-launcher keys are removed.
-
-## Presets, intentions, and timed sessions
-
-Presets store app selections and names only on this device. The Work preset
-inherits your previous selection on upgrade. Preset changes cannot alter an
-already-running session, and deleting a preset is confirmed before removal.
-
-An optional intention is visible on Home and saved in app-private storage only
-while the session is active, so reopening works. It is cleared on normal exit
-and is never uploaded or logged. Do not enter sensitive information.
-
-Timed sessions never auto-exit or launch another app. Finish and Keep going
-appear when you are on or return to Home. Finish still follows your chosen
-optional 10+ word challenge; "What do you need your phone for?" changes only the
-question, not that rule. Keep going adds time or becomes open-ended explicitly.
-No background reminders, exact alarms, notifications, breaks, DND changes, or
-interference with system alarms is included.
-
-## Recovery without cooperating with the app
-
-1. Open Android Settings using the notification shade or Quick Settings.
-2. Find **Apps > Default apps > Home app** (wording varies by manufacturer).
-3. Choose your original launcher, such as the stock OnePlus launcher.
-4. If desired, open **Apps > Focus Harbor** and uninstall it, or clear its app
-   storage. Clearing storage removes only Focus Harbor's saved setup/session.
-
-If your device requires its own safe-mode procedure, use its manufacturer's
-instructions. Do not disable system apps, change firmware, use ADB package
-removal against your stock launcher, or grant device-administrator access.
-The app deliberately cannot hide its uninstall action or these recovery routes.
+1. **If Strict App Guard is off:** Open Android Settings from the notification
+   shade → **Apps > Default apps > Home app** and select your usual launcher.
+2. **Guaranteed hardware escape hatch (even during Strict Timebound + Strict App
+   Guard):** Hold the **Power** button (or Power + Volume Up on OnePlus/Android
+   13+) to open the system Power menu, **long-press Restart / Power off**, and tap
+   **Reboot to safe mode**. Android Safe Mode automatically disables all
+   third-party Accessibility services and custom Home launchers so you can
+   switch Default Home or uninstall Focus Harbor freely, then restart normally.
 
 ## Installation and signing
 

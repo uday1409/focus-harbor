@@ -16,5 +16,7 @@ fun FocusSession.remainingMillis(now: FocusTime): Long? {
     } else {
         epochDeadline - now.epochMillis
     }
-    return remaining.coerceAtLeast(0)
+    val maxMinutes = (durationMinutes ?: FocusStore.MAX_DURATION_MINUTES)
+        .coerceIn(1, FocusStore.MAX_DURATION_MINUTES)
+    return remaining.coerceIn(0L, maxMinutes * 60_000L)
 }

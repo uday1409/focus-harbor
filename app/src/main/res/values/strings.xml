@@ -24,15 +24,17 @@
     <string name="save">Save</string>
     <string name="cancel">Cancel</string>
     <string name="step_session">THIS SESSION</string>
-    <string name="session_title">Timer, intention &amp; exit</string>
+    <string name="session_title">Mode, App Guard &amp; exit</string>
     <string name="intention_label">What are you focusing on? (optional)</string>
     <string name="intention_length">%1$d / %2$d</string>
     <string name="intention_privacy">Shown on focus Home and cleared when the session ends. Do not enter secrets.</string>
-    <string name="duration_title">How long would you like to focus?</string>
-    <string name="duration_description">Time reaching zero offers Finish or Keep going on Home; it never exits automatically.</string>
+    <string name="duration_title">Custom strict timer (1–180 min)</string>
     <string name="open_ended">Open-ended</string>
-    <string name="custom_duration">Custom duration</string>
-    <string name="minutes_label">Minutes</string>
+    <string name="duration_chip_minutes">%1$dm</string>
+    <string name="custom_duration">Custom&#8230;</string>
+    <string name="open_ended_mode_description">Open-ended: leave anytime from Focus Harbor.</string>
+    <string name="strict_timebound_description">Strict timebound (max 180 min): manual exit is disabled until 00:00. Phone &amp; Safe Mode recovery remain available.</string>
+    <string name="minutes_label">Minutes (1–180)</string>
     <plurals name="duration_minutes">
         <item quantity="one">%1$d minute</item>
         <item quantity="other">%1$d minutes</item>
@@ -41,10 +43,26 @@
     <string name="your_intention">YOUR INTENTION</string>
     <string name="time_remaining">TIME REMAINING</string>
     <string name="time_reached_title">Your planned time is complete.</string>
-    <string name="time_reached_description">Finish when ready or keep going. Your chosen apps stay in focus, and your selected exit challenge still applies to Finish.</string>
+    <string name="time_reached_description">Finish in one tap or keep going. App Guard has stopped blocking other apps.</string>
     <string name="finish">Finish</string>
     <string name="keep_going">Keep going</string>
     <string name="keep_going_title">Keep going for&#8230;</string>
+    <string name="app_guard_title">Focus Harbor App Guard</string>
+    <string name="app_guard_service_description">Blocks opening non-allowlisted apps and Recents during an active Focus Harbor session. Uses package-only window checks (canRetrieveWindowContent=false) and never reads screen text.</string>
+    <string name="app_guard_toggle">Block non-allowed apps &amp; Recents</string>
+    <string name="app_guard_toggle_description">Blocks browser links, notifications, and Recents task switching (package-only check; never reads screen text).</string>
+    <string name="app_guard_ready">Ready — blocks non-allowed apps and Recents; stops automatically at 00:00.</string>
+    <string name="app_guard_setup_button">Complete one-time App Guard setup</string>
+    <string name="app_guard_setup_title">One-time App Guard setup</string>
+    <string name="app_guard_step1_title">Step 1: Allow restricted settings &amp; Battery</string>
+    <string name="app_guard_step1_body">For sideloaded APKs on Android 13+, open App Info → tap ⋮ (top right) → Allow restricted settings. On the same page, set Battery to Unrestricted / Do not optimize.</string>
+    <string name="app_guard_battery_ready">✓ Battery is already unrestricted</string>
+    <string name="app_guard_open_app_info">1. Open App Info</string>
+    <string name="app_guard_step2_title">Step 2: Enable Focus Harbor in Accessibility</string>
+    <string name="app_guard_step2_body">Turn Focus Harbor on in Accessibility Settings. It checks foreground package names only (canRetrieveWindowContent=false) and never reads chats or screen text.</string>
+    <string name="app_guard_open_accessibility">2. Open Accessibility Settings</string>
+    <string name="app_guard_required">Enable Focus Harbor in Accessibility Settings first, or turn off App Guard.</string>
+    <string name="app_guard_blocked">Blocked during focus — only your chosen apps can open.</string>
     <string name="exit_option_description">Off lets you leave in one tap. On asks for any 10+ words; locked while active.</string>
     <string name="require_exit_text">Require 10+ words to leave focus</string>
     <string name="open_home_on_exit">Open Home switcher when leaving focus</string>
@@ -69,9 +87,14 @@
     <string name="open_short">Open</string>
     <string name="no_search_results">No matching apps in this Android profile.</string>
     <string name="no_apps">No launchable apps were found in this Android profile.</string>
-    <string name="safety_acknowledgment">I understand this limits my Home screen, not Android itself. Other apps can still be reached through notifications, Recents, links, or system settings. I can recover through Android if needed.</string>
+    <string name="safety_acknowledgment">I understand Focus Harbor filters Home (and optionally uses package-only Accessibility App Guard when enabled). Phone access and Android Safe Mode recovery always remain available.</string>
     <string name="start_focus">Enter focus</string>
+    <string name="start_strict_focus">Enter %1$dm strict focus</string>
     <string name="set_home_and_start_focus">Set Home &amp; enter focus</string>
+    <string name="set_home_and_start_strict_focus">Set Home &amp; enter %1$dm focus</string>
+    <string name="setup_guard_to_start">Enable App Guard to enter focus</string>
+    <string name="strict_timer_locked">Strict timer active — exit unlocks at 00:00</string>
+    <string name="strict_timer_active">Manual exit is disabled until your strict timer reaches 00:00.</string>
     <string name="start_requirements">Select at least one app and accept the one-time safety note.</string>
     <string name="focus_status">FOCUS IS ON</string>
     <string name="focus_heading">One thing\nat a time.</string>
@@ -84,7 +107,7 @@
     <string name="phone">Phone</string>
     <string name="recovery">Recovery &amp; safety</string>
     <string name="recovery_title">You remain in control</string>
-    <string name="recovery_body">Focus Harbor is a reversible Home app, not a device lock.\n\nNormal exit: tap Leave focus. If you enabled the word challenge before this session, write any text with at least 10 words and tap End focus. There is no preset to match, and your text is not saved. Otherwise the session ends immediately. Then tap Switch to normal Home to choose your usual launcher in Android Settings.\n\nRecovery: open Android Settings from the notification shade. Find Apps &gt; Default apps &gt; Home app, then choose your previous launcher. Names vary by phone. You can also uninstall Focus Harbor or clear its app storage from Android Settings; this removes its saved session.\n\nPhone: this app only opens your dialer. It never places a call. If no dialer is available, use the lock-screen Emergency call option if supported. Never test an emergency number.\n\nNo root, administrator access, accessibility service, overlay, VPN, app disabling, or system-wide blocking is used. Work and private profiles are not managed.</string>
+    <string name="recovery_body">Focus Harbor is a reversible focus launcher, not a permanent device lock.\n\nOpen-ended sessions: tap Leave focus anytime (with 10+ words if enabled).\n\nStrict timebound sessions (max 180 min): Leave focus stays locked until the timer reaches 00:00, then Finish unlocks in one tap and App Guard stops blocking automatically.\n\nStrict App Guard (optional): uses a package-only Accessibility check (canRetrieveWindowContent=false; never reads screen text) to bounce non-allowlisted apps and Recents back to Focus Harbor.\n\nEmergency &amp; Safe Mode recovery: Phone dialer and emergency call UI are always exempted. Restarting Android into Safe Mode (hold Power → long-press Restart) disables all third-party launchers and Accessibility services immediately.\n\nNo root, device-owner/admin, overlay, VPN, or package disabling is used.</string>
     <string name="close">Close</string>
     <string name="exit_title">What do you need your phone for?</string>
     <string name="exit_description">Write anything with at least 10 words. Your wording does not have to match anything, and this text is not saved.</string>
@@ -114,6 +137,6 @@
     <string name="duplicate_preset_name">A preset with that name already exists.</string>
     <string name="last_preset">Keep at least one preset.</string>
     <string name="invalid_intention">Keep the session intention within 160 characters.</string>
-    <string name="invalid_duration">Choose 1 to 1440 minutes, or an open-ended session.</string>
+    <string name="invalid_duration">Choose 1 to 180 minutes, or an open-ended session.</string>
     <string name="timer_not_finished">This session has not reached a timed finish yet.</string>
 </resources>

@@ -19,15 +19,19 @@ import java.util.UUID
 data class FocusSession(
     val allowedPackages: Set<String> = emptySet(),
     val requireExitText: Boolean = false,
-    val openHomeOnExit: Boolean = false,
+    val openHomeOnExit: Boolean = true,
+    val strictAppGuard: Boolean = false,
     val isActive: Boolean = false,
     val startedAtMillis: Long = 0,
     val presetName: String? = null,
     val intention: String = "",
+    val durationMinutes: Int? = null,
     val deadlineEpochMillis: Long? = null,
     val deadlineElapsedMillis: Long? = null,
     val deadlineBootCount: Int? = null,
-)
+) {
+    val isTimebound: Boolean get() = deadlineEpochMillis != null
+}
 
 data class FocusPreset(val id: String, val name: String, val allowedPackages: Set<String> = emptySet())
 
@@ -43,7 +47,8 @@ data class FocusPlan(
     val presetId: String? = null,
     val intention: String = "",
     val durationMinutes: Int? = null,
-    val openHomeOnExit: Boolean = false,
+    val openHomeOnExit: Boolean = true,
+    val strictAppGuard: Boolean = false,
 )
 
 enum class SessionMutation {
@@ -54,6 +59,7 @@ enum class SessionMutation {
     NO_ALLOWED_APPS,
     APPS_UNAVAILABLE,
     EXIT_TEXT_TOO_SHORT,
+    STRICT_TIMER_ACTIVE,
     CONFIGURATION_SAVED,
     PRESET_NOT_FOUND,
     INVALID_PRESET_NAME,
@@ -83,7 +89,7 @@ class FocusStore(private val dataStore: DataStore<Preferences>) {
             preferences.toSession(),
             presets,
             selected,
-            preferences[LAST_DURATION],
+            preferences[LAST_DURATION]?.coerceIn(1, MAX_DURATION_MINUTES),
             preferences[SAFETY_ACCEPTED] ?: false,
         )
     }
@@ -96,6 +102,11 @@ class FocusStore(private val dataStore: DataStore<Preferences>) {
 
     suspend fun saveOpenHomeOnExit(enabled: Boolean): SessionMutation = configure { preferences ->
         preferences[OPEN_HOME_ON_EXIT] = enabled
+        SessionMutation.CONFIGURATION_SAVED
+    }
+
+    suspend fun saveStrictAppGuard(enabled: Boolean): SessionMutation = configure { preferences ->
+        preferences[STRICT_APP_GUARD] = enabled
         SessionMutation.CONFIGURATION_SAVED
     }
 
@@ -213,6 +224,7 @@ class FocusStore(private val dataStore: DataStore<Preferences>) {
                     preferences[ALLOWED] = allowedPackages.toSet()
                     preferences[REQUIRE_EXIT_TEXT] = requireExitText
                     preferences[OPEN_HOME_ON_EXIT] = plan.openHomeOnExit
+                    preferences[STRICT_APP_GUARD] = plan.strictAppGuard
                     preferences[SAFETY_ACCEPTED] = true
                     preferences[STARTED_AT] = now.epochMillis
                     preferences[INTENTION] = plan.intention.trim()
@@ -232,12 +244,15 @@ class FocusStore(private val dataStore: DataStore<Preferences>) {
         return result
     }
 
-    suspend fun endSession(enteredText: String): SessionMutation {
+    suspend fun endSession(enteredText: String, now: FocusTime = FocusTime(0)): SessionMutation {
         var result = SessionMutation.NOT_ACTIVE
         dataStore.edit { preferences ->
+            val session = preferences.toSession()
+            val remaining = session.remainingMillis(now)
             when {
-                preferences[ACTIVE] != true -> result = SessionMutation.NOT_ACTIVE
-                preferences[REQUIRE_EXIT_TEXT] == true && !ExitText.isValid(enteredText) ->
+                !session.isActive -> result = SessionMutation.NOT_ACTIVE
+                remaining != null && remaining > 0L -> result = SessionMutation.STRICT_TIMER_ACTIVE
+                remaining == null && session.requireExitText && !ExitText.isValid(enteredText) ->
                     result = SessionMutation.EXIT_TEXT_TOO_SHORT
                 else -> {
                     preferences[ACTIVE] = false
@@ -271,11 +286,13 @@ class FocusStore(private val dataStore: DataStore<Preferences>) {
 
     private fun setDeadline(preferences: MutablePreferences, minutes: Int?, now: FocusTime) {
         if (minutes == null) {
+            preferences.remove(SESSION_DURATION)
             preferences.remove(DEADLINE_EPOCH)
             preferences.remove(DEADLINE_ELAPSED)
             preferences.remove(DEADLINE_BOOT)
         } else {
             val duration = minutes * 60_000L
+            preferences[SESSION_DURATION] = minutes
             preferences[DEADLINE_EPOCH] = now.epochMillis + duration
             if (now.bootCount != null) {
                 preferences[DEADLINE_ELAPSED] = now.elapsedRealtimeMillis + duration
@@ -295,11 +312,13 @@ class FocusStore(private val dataStore: DataStore<Preferences>) {
     private fun Preferences.toSession() = FocusSession(
         allowedPackages = this[ALLOWED].orEmpty().toSet(),
         requireExitText = this[REQUIRE_EXIT_TEXT] ?: false,
-        openHomeOnExit = this[OPEN_HOME_ON_EXIT] ?: false,
+        openHomeOnExit = this[OPEN_HOME_ON_EXIT] ?: true,
+        strictAppGuard = this[STRICT_APP_GUARD] ?: false,
         isActive = this[ACTIVE] ?: false,
         startedAtMillis = this[STARTED_AT] ?: 0,
         presetName = this[SESSION_PRESET_NAME],
         intention = this[INTENTION].orEmpty(),
+        durationMinutes = this[SESSION_DURATION],
         deadlineEpochMillis = this[DEADLINE_EPOCH],
         deadlineElapsedMillis = this[DEADLINE_ELAPSED],
         deadlineBootCount = this[DEADLINE_BOOT],
@@ -308,7 +327,7 @@ class FocusStore(private val dataStore: DataStore<Preferences>) {
     companion object {
         const val MAX_INTENTION_LENGTH = 160
         const val MAX_PRESET_NAME_LENGTH = 40
-        const val MAX_DURATION_MINUTES = 1_440
+        const val MAX_DURATION_MINUTES = 180
 
         fun validPresetName(name: String): Boolean =
             name.trim().isNotEmpty() && name.trim().length <= MAX_PRESET_NAME_LENGTH &&
@@ -319,6 +338,7 @@ class FocusStore(private val dataStore: DataStore<Preferences>) {
         private val ALLOWED = stringSetPreferencesKey("allowed_packages")
         private val REQUIRE_EXIT_TEXT = booleanPreferencesKey("require_exit_text")
         private val OPEN_HOME_ON_EXIT = booleanPreferencesKey("open_home_on_exit")
+        private val STRICT_APP_GUARD = booleanPreferencesKey("strict_app_guard")
         private val LEGACY_PHRASE = stringPreferencesKey("exit_phrase")
         private val ACTIVE = booleanPreferencesKey("active")
         private val STARTED_AT = longPreferencesKey("started_at_millis")
@@ -327,6 +347,7 @@ class FocusStore(private val dataStore: DataStore<Preferences>) {
         private val SESSION_PRESET_NAME = stringPreferencesKey("session_preset_name")
         private val INTENTION = stringPreferencesKey("session_intention")
         private val LAST_DURATION = intPreferencesKey("last_duration_minutes")
+        private val SESSION_DURATION = intPreferencesKey("session_duration_minutes")
         private val DEADLINE_EPOCH = longPreferencesKey("deadline_epoch_millis")
         private val DEADLINE_ELAPSED = longPreferencesKey("deadline_elapsed_millis")
         private val DEADLINE_BOOT = intPreferencesKey("deadline_boot_count")

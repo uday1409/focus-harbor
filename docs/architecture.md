@@ -7,7 +7,9 @@ MainActivity
        -> AppCatalog -> Android LauncherApps, current user only
        -> FocusStore -> Preferences DataStore, atomic edit
             -> ExitText (pure Kotlin word counting)
-            -> FocusPreset / FocusPlan / FocusTime (local configuration and timing)
+            -> FocusPreset / FocusPlan / FocusTime (local configuration and strict timing)
+FocusAppGuardService (optional package-only AccessibilityService)
+  -> FocusStore.sessions (in-memory Flow) + AppGuardPolicy (pure Kotlin package rules)
 ```
 
 `MainActivity` declares Android's HOME category. It neither grants itself the
@@ -42,41 +44,36 @@ text is never persisted. Reconstructing UI state does not bypass an enabled gate
 The intention is different from exit text: it is persisted only while active so
 Home can display it after process recreation, and removed atomically on exit.
 
-Timed sessions save both an epoch deadline and an elapsed-realtime deadline
-with the Android boot counter. `remainingMillis` uses the monotonic deadline
-on the same boot and the epoch deadline after reboot. Missing boot-counter
-support is logged explicitly and uses the epoch fallback. Time reaching zero is
-derived state, not an exit mutation. Keep going changes only the deadline after
-the current timer expires; it retains the original start, apps, intention and
-exit choice. UI ticking stops while Home is not visible; no alarms, services,
-notifications, automatic app launches, or extra permissions are involved.
+Timed sessions (1–180 minutes max) are **Strict Timebound**: `FocusStore` saves
+the planned `durationMinutes`, an epoch deadline, and an elapsed-realtime
+deadline with the Android boot counter. `remainingMillis` uses the monotonic
+deadline on the same boot, falls back to the epoch deadline after reboot, and
+clamps into `0..(durationMinutes * 60_000)` so backward clock jumps can never
+inflate a strict timer. While `remainingMillis > 0`, `endSession` rejects early
+exit (`STRICT_TIMER_ACTIVE`) and the UI hides `Leave focus`. When the countdown
+reaches `00:00`, **Finish** unlocks in one tap and **Keep going** sets a new
+strict deadline (or switches to open-ended).
 
-The DataStore migration removes legacy custom phrases and obsolete v1.3
-normal-launcher keys. An active legacy session retains a word-count gate,
-without requiring its old phrase. Idle legacy settings default the new optional
-choice off. Explicit new-format choices are preserved. One-time safety
-acknowledgment is persisted in DataStore so later sessions can start without
-re-checking the disclaimer.
-
-`FocusViewModel` owns drafts, role/catalog refresh, serialized user actions, and
-explicit errors. Read failures do not emit empty preferences. Failed writes are
-shown without pretending that the requested transition succeeded.
-
-The UI has streamlined setup, an app picker with normal-mode app launch, a focus
-grid, a read-only recovery guide, and an optional exit challenge. An enabled
-challenge accepts any 10 or more words; otherwise tapping Leave focus ends focus
-immediately. System Back on Focus Home never ends focus; when the exit dialog is
-open, Back closes only the dialog.
-App launch goes through `LauncherApps.startMainActivity` and checks the allowlist.
-The phone button uses `ACTION_DIAL`, not `ACTION_CALL`.
+`FocusAppGuardService` is an optional, event-driven `AccessibilityService`
+configured with `typeWindowStateChanged` and `canRetrieveWindowContent="false"`.
+It never inspects window hierarchies or screen text. It collects `FocusStore`
+state in memory and delegates every decision to pure-Kotlin `AppGuardPolicy`:
+blocking occurs only when `session.isActive && session.strictAppGuard` and
+`remainingMillis` is `null` or `> 0`. Non-allowlisted foreground packages and
+Recents bounce back via `performGlobalAction(GLOBAL_ACTION_HOME)` (or
+`MainActivity` fallback if Home is not held), while Phone dialers, emergency/call
+UI, enabled IME keyboards, and non-Recents `com.android.systemui` are always
+exempted.
 
 ## Dependencies and trust
 
 Kotlin + Compose Material 3 are the UI foundation; AndroidX lifecycle and
 Preferences DataStore provide lifecycle-aware state and durable storage.
-There is no backend, network SDK, AI runtime, background service, device
-administrator, or accessibility service. AndroidX supplies its own transitive
-native libraries; the app does not contain custom native code.
+There is no backend, network SDK, AI runtime, overlay, usage-stats poller, or
+device administrator. The optional `FocusAppGuardService` uses Android's standard
+`BIND_ACCESSIBILITY_SERVICE` service protection with window-content retrieval
+disabled. AndroidX supplies its own transitive native libraries; the app does
+not contain custom native code.
 
 Storage JVM tests use Robolectric API 28 so Android's actual API-26+ file-move
 branch runs against real temporary files. Android stub JARs otherwise report

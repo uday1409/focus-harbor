@@ -2,25 +2,26 @@ package dev.focusharbor.app.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.toggleable
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,12 +33,15 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import dev.focusharbor.app.FocusUiState
 import dev.focusharbor.app.R
 import dev.focusharbor.app.focus.FocusStore
+
+private val QUICK_MINUTES = listOf(15, 25, 45, 60)
 
 @Composable
 internal fun SessionOptions(
@@ -46,17 +50,57 @@ internal fun SessionOptions(
     onDuration: (Int?) -> Unit,
     onRequireExitText: (Boolean) -> Unit,
     onOpenHomeOnExit: (Boolean) -> Unit,
+    onStrictAppGuard: (Boolean) -> Unit,
+    onOpenAppGuardSetup: () -> Unit,
 ) {
-    var choosingDuration by rememberSaveable { mutableStateOf(false) }
+    var choosingCustomDuration by rememberSaveable { mutableStateOf(false) }
+    val currentMinutes = state.draftDurationMinutes
+    val isCustom = currentMinutes != null && currentMinutes !in QUICK_MINUTES
     SectionCard {
         Eyebrow(stringResource(R.string.step_session))
         Text(stringResource(R.string.session_title), style = MaterialTheme.typography.headlineSmall)
-        OutlinedButton(
-            onClick = { choosingDuration = true },
-            enabled = !state.busy,
-            modifier = Modifier.fillMaxWidth().testTag("duration-selector"),
-        ) { Text(durationLabel(state.draftDurationMinutes)) }
-        SupportingText(stringResource(R.string.duration_description))
+        ChipWrapRow(modifier = Modifier.fillMaxWidth().testTag("duration-selector")) {
+            FilterChip(
+                selected = currentMinutes == null,
+                onClick = { onDuration(null) },
+                enabled = !state.busy,
+                label = { Text(stringResource(R.string.open_ended)) },
+                modifier = Modifier.testTag("duration-choice-open"),
+            )
+            QUICK_MINUTES.forEach { minutes ->
+                FilterChip(
+                    selected = currentMinutes == minutes,
+                    onClick = { onDuration(minutes) },
+                    enabled = !state.busy,
+                    label = { Text(stringResource(R.string.duration_chip_minutes, minutes)) },
+                    modifier = Modifier.testTag("duration-choice-$minutes"),
+                )
+            }
+            FilterChip(
+                selected = isCustom,
+                onClick = { choosingCustomDuration = true },
+                enabled = !state.busy,
+                label = {
+                    Text(
+                        if (isCustom) {
+                            stringResource(R.string.duration_chip_minutes, requireNotNull(currentMinutes))
+                        } else {
+                            stringResource(R.string.custom_duration)
+                        },
+                    )
+                },
+                modifier = Modifier.testTag("duration-custom"),
+            )
+        }
+        SupportingText(
+            stringResource(
+                if (currentMinutes == null) {
+                    R.string.open_ended_mode_description
+                } else {
+                    R.string.strict_timebound_description
+                },
+            ),
+        )
         OutlinedTextField(
             value = state.draftIntention,
             onValueChange = onIntention,
@@ -83,24 +127,65 @@ internal fun SessionOptions(
         )
         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         Row(
-            modifier = Modifier.fillMaxWidth().testTag("require-exit-text")
+            modifier = Modifier.fillMaxWidth().testTag("strict-app-guard")
                 .toggleable(
-                    value = state.draftRequireExitText,
+                    value = state.draftStrictAppGuard,
                     enabled = !state.busy,
                     role = Role.Checkbox,
-                    onValueChange = onRequireExitText,
+                    onValueChange = { enabled ->
+                        onStrictAppGuard(enabled)
+                        if (enabled && !state.appGuardServiceEnabled) onOpenAppGuardSetup()
+                    },
                 )
                 .padding(vertical = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Checkbox(
-                checked = state.draftRequireExitText,
+                checked = state.draftStrictAppGuard,
                 onCheckedChange = null,
                 modifier = Modifier.padding(end = 10.dp),
             )
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                Text(stringResource(R.string.require_exit_text))
-                SupportingText(stringResource(R.string.exit_option_description))
+                Text(stringResource(R.string.app_guard_toggle))
+                SupportingText(
+                    stringResource(
+                        if (state.draftStrictAppGuard && state.appGuardServiceEnabled) {
+                            R.string.app_guard_ready
+                        } else {
+                            R.string.app_guard_toggle_description
+                        },
+                    ),
+                )
+            }
+        }
+        if (state.draftStrictAppGuard && !state.appGuardServiceEnabled) {
+            OutlinedButton(
+                onClick = onOpenAppGuardSetup,
+                enabled = !state.busy,
+                modifier = Modifier.fillMaxWidth().testTag("open-app-guard-setup"),
+            ) { Text(stringResource(R.string.app_guard_setup_button)) }
+        }
+        if (currentMinutes == null) {
+            Row(
+                modifier = Modifier.fillMaxWidth().testTag("require-exit-text")
+                    .toggleable(
+                        value = state.draftRequireExitText,
+                        enabled = !state.busy,
+                        role = Role.Checkbox,
+                        onValueChange = onRequireExitText,
+                    )
+                    .padding(vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Checkbox(
+                    checked = state.draftRequireExitText,
+                    onCheckedChange = null,
+                    modifier = Modifier.padding(end = 10.dp),
+                )
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(stringResource(R.string.require_exit_text))
+                    SupportingText(stringResource(R.string.exit_option_description))
+                }
             }
         }
         Row(
@@ -125,14 +210,96 @@ internal fun SessionOptions(
             }
         }
     }
-    if (choosingDuration) {
-        DurationDialog(
-            title = stringResource(R.string.duration_title),
-            initial = state.draftDurationMinutes,
-            onDismiss = { choosingDuration = false },
-            onSelect = { choosingDuration = false; onDuration(it) },
+    if (choosingCustomDuration) {
+        CustomMinutesDialog(
+            initial = currentMinutes ?: 30,
+            onDismiss = { choosingCustomDuration = false },
+            onSelect = { choosingCustomDuration = false; onDuration(it) },
         )
     }
+}
+
+@Composable
+private fun CustomMinutesDialog(
+    initial: Int,
+    onDismiss: () -> Unit,
+    onSelect: (Int) -> Unit,
+) {
+    var customText by rememberSaveable { mutableStateOf(initial.toString()) }
+    val value = customText.toIntOrNull()
+    val valid = value != null && FocusStore.validDuration(value)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.duration_title)) },
+        text = {
+            OutlinedTextField(
+                value = customText,
+                onValueChange = { customText = it },
+                modifier = Modifier.fillMaxWidth().testTag("duration-minutes-input"),
+                label = { Text(stringResource(R.string.minutes_label)) },
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                singleLine = true,
+                isError = customText.isNotEmpty() && !valid,
+                supportingText = { Text(stringResource(R.string.invalid_duration)) },
+            )
+        },
+        confirmButton = {
+            Button(
+                onClick = { value?.let(onSelect) },
+                enabled = valid,
+                modifier = Modifier.testTag("duration-save"),
+            ) { Text(stringResource(R.string.apply_duration)) }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
+        },
+    )
+}
+
+@Composable
+internal fun AppGuardSetupDialog(
+    batteryUnrestricted: Boolean,
+    onOpenAppInfo: () -> Unit,
+    onOpenAccessibility: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        modifier = Modifier.testTag("app-guard-setup-dialog"),
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.app_guard_setup_title)) },
+        text = {
+            Column(
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
+            ) {
+                Text(stringResource(R.string.app_guard_step1_title), fontWeight = FontWeight.SemiBold)
+                SupportingText(stringResource(R.string.app_guard_step1_body))
+                if (batteryUnrestricted) {
+                    Text(
+                        stringResource(R.string.app_guard_battery_ready),
+                        color = MaterialTheme.colorScheme.primary,
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                }
+                OutlinedButton(
+                    onClick = onOpenAppInfo,
+                    modifier = Modifier.fillMaxWidth().testTag("app-guard-open-app-info"),
+                ) { Text(stringResource(R.string.app_guard_open_app_info)) }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                Text(stringResource(R.string.app_guard_step2_title), fontWeight = FontWeight.SemiBold)
+                SupportingText(stringResource(R.string.app_guard_step2_body))
+                Button(
+                    onClick = onOpenAccessibility,
+                    modifier = Modifier.fillMaxWidth().testTag("app-guard-open-accessibility"),
+                ) { Text(stringResource(R.string.app_guard_open_accessibility)) }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss, modifier = Modifier.testTag("app-guard-setup-close")) {
+                Text(stringResource(R.string.close))
+            }
+        },
+    )
 }
 
 @Composable

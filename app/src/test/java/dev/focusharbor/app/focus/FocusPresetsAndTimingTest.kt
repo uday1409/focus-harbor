@@ -98,18 +98,26 @@ class FocusPresetsAndTimingTest {
         val before = store.sessions.first()
         assertEquals("Work", before.presetName)
         assertEquals("Finish chapter 3", before.intention)
+        assertEquals(25, before.durationMinutes)
+        assertTrue(before.isTimebound)
         assertEquals(25 * 60_000L, before.remainingMillis(now))
         assertEquals(SessionMutation.ALREADY_ACTIVE, store.saveSelection("work", emptySet()))
         assertEquals(SessionMutation.ALREADY_ACTIVE, store.selectPreset("study", emptySet()))
         assertEquals(SessionMutation.ALREADY_ACTIVE, store.renamePreset("work", "Changed"))
         assertEquals(SessionMutation.ALREADY_ACTIVE, store.deletePreset("work"))
         assertEquals(SessionMutation.ALREADY_ACTIVE, store.createPreset("Changed", emptySet()))
+        assertEquals(SessionMutation.STRICT_TIMER_ACTIVE, store.endSession("Any ten words I write should let me leave now", now))
         assertEquals(before, store.sessions.first())
-        store.endSession("Any ten words I write should let me leave now")
+        val afterDeadline = now.copy(
+            epochMillis = now.epochMillis + 26 * 60_000L,
+            elapsedRealtimeMillis = now.elapsedRealtimeMillis + 26 * 60_000L,
+        )
+        assertEquals(SessionMutation.ENDED, store.endSession("", afterDeadline))
         val after = store.states.first()
         assertFalse(after.session.isActive)
         assertEquals("", after.session.intention)
         assertNull(after.session.presetName)
+        assertNull(after.session.durationMinutes)
         assertNull(after.session.deadlineEpochMillis)
         assertEquals(apps, after.presets.first { it.id == "work" }.allowedPackages)
         assertEquals(25, after.lastDurationMinutes)
@@ -122,7 +130,7 @@ class FocusPresetsAndTimingTest {
             SessionMutation.INVALID_INTENTION,
             store.startSession(apps, false, apps, now, FocusPlan(intention = "x".repeat(161))),
         )
-        for (minutes in listOf(0, -1, 1_441)) {
+        for (minutes in listOf(0, -1, 181, 1_440)) {
             assertEquals(
                 SessionMutation.INVALID_DURATION,
                 store.startSession(apps, false, apps, now, FocusPlan(durationMinutes = minutes)),
@@ -131,26 +139,31 @@ class FocusPresetsAndTimingTest {
         assertEquals(FocusSession(), store.sessions.first())
         assertEquals(
             SessionMutation.STARTED,
-            store.startSession(apps, false, apps, now, FocusPlan(intention = "x".repeat(160), durationMinutes = 1_440)),
+            store.startSession(apps, false, apps, now, FocusPlan(intention = "x".repeat(160), durationMinutes = 180)),
         )
     }
 
     @Test
-    fun reachingTimeNeverEndsFocusOrBypassesTheWordChallenge() = runTest {
+    fun strictTimedSessionBlocksEarlyExitThenFinishesInOneTapOrKeepsGoing() = runTest {
         val store = store(backgroundScope)
         store.startSession(apps, true, apps, now, FocusPlan(intention = "Read", durationMinutes = 1))
+        assertEquals(
+            SessionMutation.STRICT_TIMER_ACTIVE,
+            store.endSession("Any ten words I write should let me leave now", now),
+        )
         val later = now.copy(epochMillis = now.epochMillis + 70_000, elapsedRealtimeMillis = now.elapsedRealtimeMillis + 70_000)
         val original = store.sessions.first()
         assertEquals(0L, original.remainingMillis(later))
         assertTrue(original.isActive)
-        assertEquals(SessionMutation.EXIT_TEXT_TOO_SHORT, store.endSession(""))
         assertEquals(SessionMutation.EXTENDED, store.keepGoing(15, later))
         val extended = store.sessions.first()
+        assertEquals(15, extended.durationMinutes)
         assertEquals(15 * 60_000L, extended.remainingMillis(later))
         assertEquals(original.startedAtMillis, extended.startedAtMillis)
         assertEquals(original.allowedPackages, extended.allowedPackages)
         assertEquals(original.intention, extended.intention)
         assertTrue(extended.requireExitText)
+        assertEquals(SessionMutation.STRICT_TIMER_ACTIVE, store.endSession("", later))
         assertEquals(SessionMutation.TIMER_NOT_FINISHED, store.keepGoing(15, later))
         val stillLater = later.copy(
             epochMillis = later.epochMillis + 1_000_000,
@@ -158,6 +171,8 @@ class FocusPresetsAndTimingTest {
         )
         assertEquals(SessionMutation.EXTENDED, store.keepGoing(null, stillLater))
         assertNull(store.sessions.first().remainingMillis(stillLater))
+        assertFalse(store.sessions.first().isTimebound)
         assertTrue(store.sessions.first().isActive)
+        assertEquals(SessionMutation.EXIT_TEXT_TOO_SHORT, store.endSession("", stillLater))
     }
 }

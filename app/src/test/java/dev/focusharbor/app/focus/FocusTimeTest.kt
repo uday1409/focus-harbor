@@ -30,4 +30,12 @@ class FocusTimeTest {
         assertNull(FocusSession(isActive = true).remainingMillis(FocusTime(100_000)))
         assertEquals(10_000L, session.remainingMillis(FocusTime(90_000)))
     }
+
+    @Test
+    fun backwardClockJumpsNeverExtendRemainingTimePastPlannedOrMaxDuration() {
+        val timed = session.copy(durationMinutes = 25, deadlineEpochMillis = 2_000_000)
+        assertEquals(25 * 60_000L, timed.remainingMillis(FocusTime(epochMillis = 1, elapsedRealtimeMillis = 5, bootCount = 9)))
+        val legacyCapped = session.copy(durationMinutes = null, deadlineEpochMillis = 999_999_999L)
+        assertEquals(180 * 60_000L, legacyCapped.remainingMillis(FocusTime(epochMillis = 1, elapsedRealtimeMillis = 5, bootCount = 9)))
+    }
 }

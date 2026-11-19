@@ -2,16 +2,18 @@ package dev.focusharbor.app
 
 import android.app.role.RoleManager
 import android.content.Context
+import android.content.Intent
 import android.content.pm.LauncherApps
 import android.os.Build
 import android.os.Process
+import android.provider.Settings
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertIsEnabled
 import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
+import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasTestTag
-import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithTag
 import androidx.compose.ui.test.onNodeWithTag
@@ -20,18 +22,19 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.performTextInput
 import androidx.compose.ui.test.performTextReplacement
-import androidx.compose.ui.test.assertTextEquals
 import androidx.datastore.preferences.core.edit
+import androidx.lifecycle.ViewModelProvider
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
-import androidx.test.platform.app.InstrumentationRegistry
 import dev.focusharbor.app.focus.AndroidFocusClock
 import dev.focusharbor.app.focus.FocusSession
 import dev.focusharbor.app.focus.FocusStore
 import dev.focusharbor.app.focus.focusDataStore
 import dev.focusharbor.app.focus.remainingMillis
+import dev.focusharbor.app.guard.FocusAppGuardService
+import dev.focusharbor.app.guard.FocusGuardSignals
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -75,6 +78,8 @@ class SetupFlowTest {
     @After
     fun restoreEmulatorHome() {
         scenario?.close()
+        shell("settings delete secure enabled_accessibility_services")
+        shell("settings put secure accessibility_enabled 0")
         if (previousHome.matches(PackageName)) {
             shell("cmd role add-role-holder --user 0 android.app.role.HOME $previousHome")
             assertTrue(
@@ -101,8 +106,11 @@ class SetupFlowTest {
 
     @Test
     fun userCanStartWithTheChallengeOffAndReenterWithoutRecheckingSafety() {
+        compose.onNodeWithTag("setup-list").performScrollToNode(hasTestTag("open-home-on-exit"))
+        compose.onNodeWithTag("open-home-on-exit").assertIsOn().performClick().assertIsOff()
         val session = configureAndStart(false)
         assertFalse(session.requireExitText)
+        assertFalse(session.openHomeOnExit)
         compose.onNodeWithTag("leave-focus").performClick()
         compose.waitUntil(10_000) {
             compose.onAllNodesWithTag("start-focus").fetchSemanticsNodes().isNotEmpty()
@@ -118,7 +126,7 @@ class SetupFlowTest {
     }
 
     @Test
-    fun presetsKeepSeparateAppsAndTheSessionShowsItsIntention() {
+    fun presetsAndDurationChipsSwitchInOneTapAndStartStrictTimeboundFocus() {
         val apps = context.getSystemService(LauncherApps::class.java)
             .getActivityList(null, Process.myUserHandle())
             .map { it.componentName.packageName }
@@ -131,9 +139,8 @@ class SetupFlowTest {
         selectPreset("work")
         awaitModel(compose, requireNotNull(scenario)) { it.draftAllowed == setOf(apps[0]) }
         compose.onNodeWithTag("setup-list").performScrollToNode(hasTestTag("duration-selector"))
-        compose.onNodeWithTag("duration-selector").performClick()
         compose.onNodeWithTag("duration-choice-25").performClick()
-        compose.onNodeWithTag("duration-save").performClick()
+        compose.onNodeWithTag("require-exit-text").assertDoesNotExist()
         compose.onNodeWithTag("setup-list").performScrollToNode(hasTestTag("intention-input"))
         compose.onNodeWithTag("intention-input").performTextInput("Finish chapter 3")
         compose.onNodeWithTag("setup-list").performScrollToNode(hasTestTag("safety-ack"))
@@ -143,9 +150,12 @@ class SetupFlowTest {
             compose.onAllNodesWithTag("session-intention").fetchSemanticsNodes().isNotEmpty()
         }
         compose.onNodeWithTag("session-intention").assertTextEquals("Finish chapter 3")
+        compose.onNodeWithTag("strict-timer-locked").assertIsDisplayed()
+        compose.onNodeWithTag("leave-focus").assertDoesNotExist()
         val session = runBlocking { FocusStore(context.focusDataStore).sessions.first() }
         assertEquals(context.getString(R.string.preset_work), session.presetName)
         assertEquals(setOf(apps[0]), session.allowedPackages)
+        assertTrue(session.isTimebound)
         assertTrue(requireNotNull(session.remainingMillis(AndroidFocusClock(context).now())) > 0)
     }
 
@@ -168,13 +178,13 @@ class SetupFlowTest {
     }
 
     @Test
-    fun openHomeSwitcherOnExitLaunchesAndroidHomeSettingsOnceAndRemembersChoice() {
+    fun openHomeSwitcherOnExitDefaultsOnAndLaunchesAndroidHomeSettingsOnce() {
         val selected = context.getSystemService(LauncherApps::class.java)
             .getActivityList(null, Process.myUserHandle())
             .first { it.componentName.packageName != context.packageName }
             .componentName.packageName
         compose.onNodeWithTag("setup-list").performScrollToNode(hasTestTag("open-home-on-exit"))
-        compose.onNodeWithTag("open-home-on-exit").assertIsOff().performClick().assertIsOn()
+        compose.onNodeWithTag("open-home-on-exit").assertIsOn()
         chooseApp(selected)
         compose.onNodeWithTag("setup-list").performScrollToNode(hasTestTag("safety-ack"))
         compose.onNodeWithTag("safety-ack").performClick()
@@ -186,7 +196,7 @@ class SetupFlowTest {
         assertTrue(activeSession.isActive)
         assertTrue(activeSession.openHomeOnExit)
         compose.onNodeWithTag("leave-focus").performClick()
-        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        val automation = emulatorUiAutomation()
         compose.waitUntil(15_000) {
             val activePackage = automation.rootInActiveWindow?.packageName?.toString()
             activePackage != null && activePackage != context.packageName
@@ -200,9 +210,64 @@ class SetupFlowTest {
         compose.onNodeWithTag("open-home-on-exit").assertIsOn()
     }
 
+    @Test
+    fun togglingAppGuardWithoutAccessibilityOpensGuidedTwoStepDialog() {
+        shell("settings delete secure enabled_accessibility_services")
+        shell("settings put secure accessibility_enabled 0")
+        scenario?.onActivity { ViewModelProvider(it)[FocusViewModel::class.java].refresh() }
+        val selected = context.getSystemService(LauncherApps::class.java)
+            .getActivityList(null, Process.myUserHandle())
+            .first { it.componentName.packageName != context.packageName }
+            .componentName.packageName
+        chooseApp(selected)
+        compose.onNodeWithTag("setup-list").performScrollToNode(hasTestTag("strict-app-guard"))
+        compose.onNodeWithTag("strict-app-guard").assertIsOff().performClick()
+        compose.onNodeWithTag("app-guard-setup-dialog").assertIsDisplayed()
+        compose.onNodeWithTag("app-guard-open-app-info").assertIsDisplayed()
+        compose.onNodeWithTag("app-guard-open-accessibility").assertIsDisplayed()
+        compose.onNodeWithTag("app-guard-setup-close").performClick()
+        compose.onNodeWithTag("setup-list").performScrollToNode(hasTestTag("safety-ack"))
+        compose.onNodeWithTag("safety-ack").performClick()
+        compose.onNodeWithTag("start-focus").assertIsEnabled().performClick()
+        compose.onNodeWithTag("app-guard-setup-dialog").assertIsDisplayed()
+        assertFalse(runBlocking { FocusStore(context.focusDataStore).sessions.first().isActive })
+    }
+
+    @Test
+    fun enabledStrictAppGuardBouncesNonAllowlistedAppsBackToFocusHome() {
+        val component = "${context.packageName}/${FocusAppGuardService::class.java.name}"
+        shell("settings put secure enabled_accessibility_services $component")
+        shell("settings put secure accessibility_enabled 1")
+        compose.waitUntil(10_000) { FocusAppGuardService.isEnabled(context) }
+        scenario?.onActivity { ViewModelProvider(it)[FocusViewModel::class.java].refresh() }
+        val selected = context.getSystemService(LauncherApps::class.java)
+            .getActivityList(null, Process.myUserHandle())
+            .map { it.componentName.packageName }
+            .first { it != context.packageName && it != "com.android.settings" }
+        chooseApp(selected)
+        compose.onNodeWithTag("setup-list").performScrollToNode(hasTestTag("strict-app-guard"))
+        compose.onNodeWithTag("strict-app-guard").assertIsOff().performClick().assertIsOn()
+        compose.onNodeWithTag("app-guard-setup-dialog").assertDoesNotExist()
+        compose.onNodeWithTag("setup-list").performScrollToNode(hasTestTag("safety-ack"))
+        compose.onNodeWithTag("safety-ack").performClick()
+        compose.onNodeWithTag("start-focus").assertIsEnabled().performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithTag("leave-focus").fetchSemanticsNodes().isNotEmpty()
+        }
+        assertTrue(runBlocking { FocusStore(context.focusDataStore).sessions.first().strictAppGuard })
+        val automation = emulatorUiAutomation()
+        val blockedBefore = FocusGuardSignals.blockedCount.value
+        context.startActivity(Intent(Settings.ACTION_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        compose.waitUntil(15_000) {
+            FocusGuardSignals.blockedCount.value > blockedBefore &&
+                automation.rootInActiveWindow?.packageName?.toString() == context.packageName
+        }
+        compose.onNodeWithTag("leave-focus").assertIsDisplayed()
+        assertTrue(runBlocking { FocusStore(context.focusDataStore).sessions.first().isActive })
+    }
+
     private fun selectPreset(id: String) {
         compose.onNodeWithTag("setup-list").performScrollToNode(hasTestTag("preset-selector"))
-        compose.onNodeWithTag("preset-selector").performClick()
         compose.onNodeWithTag("preset-option-$id").performClick()
         awaitModel(compose, requireNotNull(scenario)) { !it.busy && it.selectedPresetId == id }
     }
