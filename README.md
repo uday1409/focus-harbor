@@ -10,7 +10,7 @@ Recents, settings, links, or another app can still reach other apps. Normal
 in-app exit follows your pre-session word-challenge choice; OS recovery and uninstall remain
 possible. It is not a tamper-proof version of OnePlus Zen Space.
 
-**Download:** [Focus Harbor 1.4.0 evaluation APK and SHA-256 checksum](https://github.com/uday1409/focus-harbor/releases/tag/v1.4.0-preview).
+**Download:** [Focus Harbor 1.5.0 evaluation APK and SHA-256 checksum](https://github.com/uday1409/focus-harbor/releases/tag/v1.5.0-preview).
 Open the release's **Assets** section to download the debug-signed preview.
 
 ## Use it
@@ -22,15 +22,17 @@ Open the release's **Assets** section to download the debug-signed preview.
    own selection locally; you can rename or delete presets before focus.
 3. Optionally choose a duration (or keep it open-ended), enter **What are you
    focusing on?**, and optionally enable **Require 10+ words to leave focus**
-   (off by default, remembered between sessions).
+   or **Open Home switcher when leaving focus** (both off by default and
+   remembered between sessions).
 4. Accept the safety note once, then tap **Set Home & enter focus** (or **Enter
    focus** if Focus Harbor is already your Home app) and choose Focus Harbor in
    Android's prompt. Future sessions remember the safety note for quick entry.
 5. Tap **Leave focus** to end the session. With the challenge off, exit is one
    tap; accidental Back swipes on Focus Home never end focus. With the challenge
    on, answer **What do you need your phone for?** with **any 10+ words** and
-   tap **End focus**. Then tap **Switch to normal Home** at the top of the
-   screen to choose your usual launcher in Android Settings.
+   tap **End focus**. If **Open Home switcher when leaving focus** is enabled,
+   Android's Home app setting opens automatically; otherwise tap **Switch to
+   normal Home** at the top of the screen whenever you are ready.
 6. When a timer reaches zero, Home offers **Finish** or **Keep going**. Finish
    follows the same selected exit policy; Keep going adds time or becomes
    open-ended. Focus never ends or launches other apps automatically.

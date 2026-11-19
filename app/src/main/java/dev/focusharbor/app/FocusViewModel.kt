@@ -26,8 +26,11 @@ import dev.focusharbor.app.focus.focusDataStore
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -41,6 +44,7 @@ data class FocusUiState(
     val defaultHome: Boolean = false,
     val draftAllowed: Set<String> = emptySet(),
     val draftRequireExitText: Boolean = false,
+    val draftOpenHomeOnExit: Boolean = false,
     val presets: List<FocusPreset> = emptyList(),
     val selectedPresetId: String? = null,
     val draftIntention: String = "",
@@ -58,6 +62,8 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
     private val clock = AndroidFocusClock(application)
     private val mutableState = MutableStateFlow(FocusUiState())
     val state = mutableState.asStateFlow()
+    private val openHomeChannel = Channel<Unit>(Channel.CONFLATED)
+    val openHomeEvents = openHomeChannel.receiveAsFlow()
     private var storageJob: Job? = null
     private var catalogJob: Job? = null
 
@@ -100,6 +106,11 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
                                 session.requireExitText
                             } else {
                                 it.draftRequireExitText
+                            },
+                            draftOpenHomeOnExit = if (initializeDraft) {
+                                session.openHomeOnExit
+                            } else {
+                                it.draftOpenHomeOnExit
                             },
                             draftIntention = if (initializeDraft) "" else it.draftIntention,
                             draftDurationMinutes = if (initializeDraft) saved.lastDurationMinutes else it.draftDurationMinutes,
@@ -192,6 +203,18 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
         if (canEdit()) mutableState.update { it.copy(draftRequireExitText = required) }
     }
 
+    fun setOpenHomeOnExit(enabled: Boolean) {
+        if (!canEdit()) return
+        mutableState.update { it.copy(draftOpenHomeOnExit = enabled) }
+        viewModelScope.launch {
+            try {
+                store.saveOpenHomeOnExit(enabled)
+            } catch (error: IOException) {
+                Log.e(TAG, "Unable to save the exit Home-switcher preference.", error)
+            }
+        }
+    }
+
     fun toggleApp(packageName: String) {
         if (!canEdit()) return
         mutableState.update {
@@ -260,6 +283,7 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
                     presetId = current.selectedPresetId,
                     intention = current.draftIntention,
                     durationMinutes = current.draftDurationMinutes,
+                    openHomeOnExit = current.draftOpenHomeOnExit,
                 ),
             )
         }
@@ -267,7 +291,14 @@ class FocusViewModel(application: Application) : AndroidViewModel(application) {
 
     fun endFocus(enteredText: String) {
         if (state.value.busy) return
-        mutate { store.endSession(enteredText) }
+        mutate {
+            val openHomeAfter = store.sessions.first().openHomeOnExit
+            val result = store.endSession(enteredText)
+            if (result == SessionMutation.ENDED && openHomeAfter && isDefaultHome()) {
+                openHomeChannel.trySend(Unit)
+            }
+            result
+        }
     }
 
     private fun mutate(action: suspend () -> SessionMutation) {

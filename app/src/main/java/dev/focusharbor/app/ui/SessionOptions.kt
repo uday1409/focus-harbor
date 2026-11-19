@@ -45,6 +45,7 @@ internal fun SessionOptions(
     onIntention: (String) -> Unit,
     onDuration: (Int?) -> Unit,
     onRequireExitText: (Boolean) -> Unit,
+    onOpenHomeOnExit: (Boolean) -> Unit,
 ) {
     var choosingDuration by rememberSaveable { mutableStateOf(false) }
     SectionCard {
@@ -100,6 +101,27 @@ internal fun SessionOptions(
             Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(stringResource(R.string.require_exit_text))
                 SupportingText(stringResource(R.string.exit_option_description))
+            }
+        }
+        Row(
+            modifier = Modifier.fillMaxWidth().testTag("open-home-on-exit")
+                .toggleable(
+                    value = state.draftOpenHomeOnExit,
+                    enabled = !state.busy,
+                    role = Role.Checkbox,
+                    onValueChange = onOpenHomeOnExit,
+                )
+                .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Checkbox(
+                checked = state.draftOpenHomeOnExit,
+                onCheckedChange = null,
+                modifier = Modifier.padding(end = 10.dp),
+            )
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(stringResource(R.string.open_home_on_exit))
+                SupportingText(stringResource(R.string.open_home_on_exit_description))
             }
         }
     }

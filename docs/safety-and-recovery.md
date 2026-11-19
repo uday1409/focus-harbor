@@ -51,8 +51,10 @@ Accidental Back gestures on Focus Home never end an active session.
 After leaving focus, Focus Harbor shows **Switch to normal Home** at the top of
 the screen whenever it is still your default Home app, opening Android's native
 Home switcher so you can choose your usual launcher cleanly without background
-Home forwarding. Your safety acknowledgment is remembered after the first
-session, while **Recovery & safety** remains available at all times.
+Home forwarding. You can also enable **Open Home switcher when leaving focus**
+before starting so Android's Home switcher opens automatically as soon as focus
+ends. Your safety acknowledgment is remembered after the first session, while
+**Recovery & safety** remains available at all times.
 
 On upgrade, an already-active old session retains the word-count challenge,
 but its custom phrase and obsolete v1.3 normal-launcher keys are removed.

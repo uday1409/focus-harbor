@@ -26,6 +26,7 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.SdkSuppress
+import androidx.test.platform.app.InstrumentationRegistry
 import dev.focusharbor.app.focus.AndroidFocusClock
 import dev.focusharbor.app.focus.FocusSession
 import dev.focusharbor.app.focus.FocusStore
@@ -164,6 +165,39 @@ class SetupFlowTest {
         compose.onNodeWithTag("preset-delete").performClick()
         compose.onNodeWithTag("preset-delete-confirm").performClick()
         awaitModel(compose, requireNotNull(scenario)) { !it.busy && it.presets.size == 4 }
+    }
+
+    @Test
+    fun openHomeSwitcherOnExitLaunchesAndroidHomeSettingsOnceAndRemembersChoice() {
+        val selected = context.getSystemService(LauncherApps::class.java)
+            .getActivityList(null, Process.myUserHandle())
+            .first { it.componentName.packageName != context.packageName }
+            .componentName.packageName
+        compose.onNodeWithTag("setup-list").performScrollToNode(hasTestTag("open-home-on-exit"))
+        compose.onNodeWithTag("open-home-on-exit").assertIsOff().performClick().assertIsOn()
+        chooseApp(selected)
+        compose.onNodeWithTag("setup-list").performScrollToNode(hasTestTag("safety-ack"))
+        compose.onNodeWithTag("safety-ack").performClick()
+        compose.onNodeWithTag("start-focus").assertIsEnabled().performClick()
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithTag("leave-focus").fetchSemanticsNodes().isNotEmpty()
+        }
+        val activeSession = runBlocking { FocusStore(context.focusDataStore).sessions.first() }
+        assertTrue(activeSession.isActive)
+        assertTrue(activeSession.openHomeOnExit)
+        compose.onNodeWithTag("leave-focus").performClick()
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        compose.waitUntil(15_000) {
+            val activePackage = automation.rootInActiveWindow?.packageName?.toString()
+            activePackage != null && activePackage != context.packageName
+        }
+        assertFalse(runBlocking { FocusStore(context.focusDataStore).sessions.first().isActive })
+        emulatorShell("input keyevent KEYCODE_BACK")
+        compose.waitUntil(10_000) {
+            compose.onAllNodesWithTag("start-focus").fetchSemanticsNodes().isNotEmpty()
+        }
+        compose.onNodeWithTag("setup-list").performScrollToNode(hasTestTag("open-home-on-exit"))
+        compose.onNodeWithTag("open-home-on-exit").assertIsOn()
     }
 
     private fun selectPreset(id: String) {

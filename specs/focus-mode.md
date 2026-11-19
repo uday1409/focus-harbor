@@ -35,6 +35,11 @@ reboot or when the platform boot counter is unavailable.
 - When Focus Harbor is not yet the default Home app, tapping **Set Home & enter
   focus** opens Android's Home role chooser (API 29+) or Home settings (API 26-28)
   and starts the session automatically once Focus Harbor holds the Home role.
+- Optionally enable **Open Home switcher when leaving focus** (off by default,
+  remembered between sessions, and locked while active). When enabled and Focus
+  Harbor still holds the Home role, a successful exit (`Leave focus` or timed
+  `Finish`) opens `Settings.ACTION_HOME_SETTINGS` once so the user can restore
+  their usual launcher in one tap. Returning from Settings never re-triggers it.
 - When focus is off and Focus Harbor still holds the Home role (for example,
   right after ending a session), the top card offers **Switch to normal Home**
   (`Settings.ACTION_HOME_SETTINGS`) so the user can restore their usual launcher
@@ -138,6 +143,7 @@ routes, not normal in-app exits.
 | F19 | Same-boot clock changes and reboot timing are handled explicitly | `FocusTimeTest` |
 | F20 | Back never ends an active session even when the word challenge is off | `FocusFlowTest.backPressNeverEndsFocusEvenWhenChallengeIsOff` |
 | F21 | One-time safety acknowledgment persists across sessions and locks while active | `FocusStoreTest.safetyAcknowledgmentPersistsAcrossSessionsAndIsLockedWhileActive`, `SetupFlowTest.userCanStartWithTheChallengeOffAndReenterWithoutRecheckingSafety` |
+| F22 | Optional auto-open Home switcher fires once after valid exit and remembers choice | `FocusStoreTest.openHomeOnExitOptionSnapshotsLocksWhileActiveAndRemembersPreference`, `SetupFlowTest.openHomeSwitcherOnExitLaunchesAndroidHomeSettingsOnceAndRemembersChoice` |
 
 OEM-specific behavior and Android 8/9 Home selection require device-matrix testing
 before wider distribution. Do not describe emulator evidence as OnePlus testing.

@@ -17,7 +17,10 @@ Home settings screen (API 26-28) performs Home selection. When Focus Harbor is
 not yet Home, **Set Home & enter focus** requests the Home role and starts focus
 once the role is held; when focus is off and Focus Harbor still holds Home, the
 top card opens `Settings.ACTION_HOME_SETTINGS` so the user can restore their
-usual launcher natively. The role is rechecked on resume and immediately before
+usual launcher natively. If the user enables **Open Home switcher when leaving
+focus**, a buffered one-shot event opens `Settings.ACTION_HOME_SETTINGS` once
+after `endSession` succeeds while Focus Harbor holds Home, without re-triggering
+on return or recreation. The role is rechecked on resume and immediately before
 starting a session.
 
 `AppCatalog` uses `LauncherApps.getActivityList` for the current user, excludes

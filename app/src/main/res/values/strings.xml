@@ -47,6 +47,8 @@
     <string name="keep_going_title">Keep going for&#8230;</string>
     <string name="exit_option_description">Off lets you leave in one tap. On asks for any 10+ words; locked while active.</string>
     <string name="require_exit_text">Require 10+ words to leave focus</string>
+    <string name="open_home_on_exit">Open Home switcher when leaving focus</string>
+    <string name="open_home_on_exit_description">Opens Android Home settings right after focus ends so you can switch back in one tap.</string>
     <plurals name="exit_word_count">
         <item quantity="one">%1$d word (minimum %2$d)</item>
         <item quantity="other">%1$d words (minimum %2$d)</item>

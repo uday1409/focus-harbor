@@ -60,6 +60,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -140,7 +141,16 @@ fun FocusHarborApp(model: FocusViewModel) {
     val chooseHome: () -> Unit = { launchHomeSelection(model.homeSelectionIntent(), false) }
     val switchNormalHome: () -> Unit = { launchHomeSelection(Intent(Settings.ACTION_HOME_SETTINGS), false) }
     val setHomeAndStart: () -> Unit = { launchHomeSelection(model.homeSelectionIntent(), true) }
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val currentSwitchNormalHome by rememberUpdatedState(switchNormalHome)
 
+    LaunchedEffect(lifecycleOwner, model) {
+        lifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            model.openHomeEvents.collect {
+                currentSwitchNormalHome()
+            }
+        }
+    }
     LaunchedEffect(state.message) {
         state.message?.let {
             snackbar.showSnackbar(context.getString(it))
@@ -197,6 +207,7 @@ fun FocusHarborApp(model: FocusViewModel) {
                     onChooseHome = chooseHome,
                     onSwitchNormalHome = switchNormalHome,
                     onRequireExitText = model::setRequireExitText,
+                    onOpenHomeOnExit = model::setOpenHomeOnExit,
                     onChooseApps = { showPicker = true },
                     onClearSelection = model::clearSelection,
                     onSafetyAccepted = model::setSafetyAccepted,
@@ -275,6 +286,7 @@ private fun SetupScreen(
     onChooseHome: () -> Unit,
     onSwitchNormalHome: () -> Unit,
     onRequireExitText: (Boolean) -> Unit,
+    onOpenHomeOnExit: (Boolean) -> Unit,
     onChooseApps: () -> Unit,
     onClearSelection: () -> Unit,
     onSafetyAccepted: (Boolean) -> Unit,
@@ -330,7 +342,7 @@ private fun SetupScreen(
                 onClearSelection = onClearSelection,
             )
         }
-        item { SessionOptions(state, onIntention, onDuration, onRequireExitText) }
+        item { SessionOptions(state, onIntention, onDuration, onRequireExitText, onOpenHomeOnExit) }
         if (!state.defaultHome) {
             item {
                 SectionCard {

@@ -168,6 +168,7 @@ class FocusStoreTest {
             { failingStore.startSession(apps, true, apps, FocusTime(1)) },
             { failingStore.endSession(text) },
             { failingStore.saveSafetyAccepted(true) },
+            { failingStore.saveOpenHomeOnExit(true) },
         )
         for (operation in operations) {
             try {
@@ -191,6 +192,24 @@ class FocusStoreTest {
         assertTrue(FocusStore(preferences).states.first().safetyAccepted)
         assertEquals(SessionMutation.CONFIGURATION_SAVED, store.saveSafetyAccepted(false))
         assertFalse(store.states.first().safetyAccepted)
+    }
+
+    @Test
+    fun openHomeOnExitOptionSnapshotsLocksWhileActiveAndRemembersPreference() = runTest {
+        val preferences = dataStore(backgroundScope)
+        val store = FocusStore(preferences)
+        assertFalse(store.sessions.first().openHomeOnExit)
+        assertEquals(SessionMutation.CONFIGURATION_SAVED, store.saveOpenHomeOnExit(true))
+        assertTrue(FocusStore(preferences).sessions.first().openHomeOnExit)
+        store.startSession(apps, true, apps, FocusTime(123), FocusPlan(openHomeOnExit = true))
+        assertEquals(SessionMutation.ALREADY_ACTIVE, store.saveOpenHomeOnExit(false))
+        assertTrue(store.sessions.first().openHomeOnExit)
+        assertEquals(SessionMutation.EXIT_TEXT_TOO_SHORT, store.endSession("too short"))
+        assertTrue(store.sessions.first().isActive)
+        assertEquals(SessionMutation.ENDED, store.endSession(text))
+        val after = FocusStore(preferences).sessions.first()
+        assertFalse(after.isActive)
+        assertTrue(after.openHomeOnExit)
     }
 
     @Test

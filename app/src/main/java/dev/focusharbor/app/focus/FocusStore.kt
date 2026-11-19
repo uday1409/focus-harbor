@@ -19,6 +19,7 @@ import java.util.UUID
 data class FocusSession(
     val allowedPackages: Set<String> = emptySet(),
     val requireExitText: Boolean = false,
+    val openHomeOnExit: Boolean = false,
     val isActive: Boolean = false,
     val startedAtMillis: Long = 0,
     val presetName: String? = null,
@@ -42,6 +43,7 @@ data class FocusPlan(
     val presetId: String? = null,
     val intention: String = "",
     val durationMinutes: Int? = null,
+    val openHomeOnExit: Boolean = false,
 )
 
 enum class SessionMutation {
@@ -89,6 +91,11 @@ class FocusStore(private val dataStore: DataStore<Preferences>) {
 
     suspend fun saveSafetyAccepted(accepted: Boolean): SessionMutation = configure { preferences ->
         preferences[SAFETY_ACCEPTED] = accepted
+        SessionMutation.CONFIGURATION_SAVED
+    }
+
+    suspend fun saveOpenHomeOnExit(enabled: Boolean): SessionMutation = configure { preferences ->
+        preferences[OPEN_HOME_ON_EXIT] = enabled
         SessionMutation.CONFIGURATION_SAVED
     }
 
@@ -205,6 +212,7 @@ class FocusStore(private val dataStore: DataStore<Preferences>) {
                 else -> {
                     preferences[ALLOWED] = allowedPackages.toSet()
                     preferences[REQUIRE_EXIT_TEXT] = requireExitText
+                    preferences[OPEN_HOME_ON_EXIT] = plan.openHomeOnExit
                     preferences[SAFETY_ACCEPTED] = true
                     preferences[STARTED_AT] = now.epochMillis
                     preferences[INTENTION] = plan.intention.trim()
@@ -287,6 +295,7 @@ class FocusStore(private val dataStore: DataStore<Preferences>) {
     private fun Preferences.toSession() = FocusSession(
         allowedPackages = this[ALLOWED].orEmpty().toSet(),
         requireExitText = this[REQUIRE_EXIT_TEXT] ?: false,
+        openHomeOnExit = this[OPEN_HOME_ON_EXIT] ?: false,
         isActive = this[ACTIVE] ?: false,
         startedAtMillis = this[STARTED_AT] ?: 0,
         presetName = this[SESSION_PRESET_NAME],
@@ -309,6 +318,7 @@ class FocusStore(private val dataStore: DataStore<Preferences>) {
 
         private val ALLOWED = stringSetPreferencesKey("allowed_packages")
         private val REQUIRE_EXIT_TEXT = booleanPreferencesKey("require_exit_text")
+        private val OPEN_HOME_ON_EXIT = booleanPreferencesKey("open_home_on_exit")
         private val LEGACY_PHRASE = stringPreferencesKey("exit_phrase")
         private val ACTIVE = booleanPreferencesKey("active")
         private val STARTED_AT = longPreferencesKey("started_at_millis")
